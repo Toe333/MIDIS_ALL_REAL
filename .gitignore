@@ -1,0 +1,65 @@
+# =============================================================================
+# MIDIS_ALL_REAL — track CODE + docs ONLY.
+# Everything heavy (the corpus, caches, vectors, catalogs, audio, env) is
+# regenerable or huge and must NEVER go to git/GitHub (100 MB/file limit).
+# =============================================================================
+
+# --- Python env / caches ---
+.venv/
+venv/
+env/
+__pycache__/
+*.py[cod]
+*.egg-info/
+.ipynb_checkpoints/
+
+# --- Large data directories (regenerable / corpus) ---
+MIDIs/
+NOTESEQ_DATA/
+META_DATA/
+CHORDS_DATA/
+SIGNATURES_DATA/
+catalog/
+TOKENIZED/
+pools/
+_work/
+_stats/
+_logs/
+_staging_imac/
+_quarantine/
+soundfonts/
+web/vendor/
+
+# --- Big / binary file types (belt-and-suspenders) ---
+*.mid
+*.midi
+*.wav
+*.mp3
+*.flac
+*.ogg
+*.m4a
+*.npy
+*.npz
+*.pkl
+*.pickle
+*.parquet
+*.sqlite
+*.sqlite3
+*.db
+*.bin
+*.safetensors
+*.ckpt
+*.pt
+*.pth
+*.sf2
+*.sf3
+*.bak
+*.bak.*
+*.log
+*.tsv
+
+# --- Editor / OS cruft ---
+.claude/
+.DS_Store
+*.swp
+*~
