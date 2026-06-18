@@ -6,11 +6,35 @@
 > Older standalone docs (README.md, AGENT_TODO.md, FINAL_REPORT.txt) were folded
 > into this file on 2026-06-16 and deleted — do not recreate them.
 
+> **GrooveDNA (2026-06-18, `CODE/29_groove_dna.py`):** the canonical **11-D drum-only
+> Rhythm Vector** per song, built to push the project's #1 priority (rhythm) into a
+> dedicated, clusterable space. It reads the `NOTESEQ_DATA` cache (no re-parse, same
+> `process_bucket`/parallel pattern as 22), **isolates the drum kit** (`chan 9|10` AND
+> GM-percussion pitch `35–81` — AND, not the loose OR, so melodic notes can't leak in),
+> and normalizes every density to **per-4/4-bar in beats** (tempo-independent, so the
+> "120 BPM reference grid" needs no rescale). The 11 LOCKED dims (array index order):
+> `kick_density_bar, snare_backbeat_strength, hat_cym_density, perc_diversity,
+> swing_cont, syncopation_drum, dotted_groove, ghost_dynamics, drum_pattern_entropy,
+> bar_drum_variance, groove_composite` — all float32, NaN-safe, **neutral 0.5 when a
+> song has no drums**. **Purpose:** drum-pattern clustering for new-music invention —
+> it gives the corpus a real *feel* axis independent of pitch/harmony. **Integration:**
+> outputs `_work/groove_dna.parquet` → `23_catalog_merge.py` folds the 11 scalars onto
+> the catalog (inspectable) **plus** a packed `groove_dna float32[11]` array column for
+> kNN/clustering. **DONE & integrated 2026-06-18:** computed over all 462,621 cached
+> files (311,585 have a real drum kit), merged onto the catalog (now 160 parquet / 159
+> sqlite cols), and added to the signature as its own **×2-weighted pillar** via
+> `26_signature_extend.py` → **`signatures_ext.npy` is now N×85** (was 74) with kNN
+> refit; neighbor groove-block spread is 6× tighter than global (0.071 vs 0.426), i.e.
+> feel now clusters. It is the quantitative backbone of the **NinjaStar "Groove" axis**
+> (by-ear ratings ↔ measured GrooveDNA) and a new lens for the **empty-space hunt**
+> (`27_emptyspace.py`): find under-populated regions of *groove* space, not just
+> pitch/harmony space, to target genuinely novel rhythmic feels.
+
 ---
 
 ## CURRENT STATUS (always reflects the latest session)
 
-**As of 2026-06-17 ~15:02 — FINISH LINE REACHED: signature extended to N×74 (pitch+rhythm+melody+harmony) and cosine kNN rebuilt. The corpus is now VECTORIZED / experiment-ready — every song is a point in a space that includes TIME-FEEL, not just pitch.**
+**As of 2026-06-18 ~13:06 — GROOVEDNA SHIPPED: signature extended N×74 → N×85 with a dedicated drum-only RHYTHM pillar (×2 weight) and cosine kNN refit. Drum FEEL is now its own clusterable axis. (Prior: 2026-06-17 finish line, N×74 pitch+rhythm+melody+harmony.) The corpus is VECTORIZED / experiment-ready — every song is a point in a space that includes both time-feel AND drum-pattern feel.**
 
 > ### ▶ NEXT SESSION — START HERE (corpus lane)
 > **Two parallel lanes now:** (A) **corpus / Phase 11** — this pointer; (B) **NinjaStar-8 annotator**
@@ -250,6 +274,14 @@ The corpus is vectorized as of 2026-06-17 15:02 (`signatures_ext.npy` N×74 + co
 ---
 
 ## SESSION LOG (append-only, newest first)
+
+### 2026-06-18 (~13:06) — GrooveDNA: 11-D drum-only Rhythm Vector built, merged, folded into the signature
+- **New `CODE/29_groove_dna.py`** — canonical 11-D GrooveDNA per song from the `NOTESEQ_DATA` cache (no re-parse; same `process_bucket`/parallel `Pool` pattern as 22). Ran full corpus in ~165s @ ~2,800 files/s → **`_work/groove_dna.parquet` (462,621 rows, 12 cols)**; **311,585 files have a real drum kit** (rest = neutral 0.5). Medians (drum files): kick/bar 2.91, backbeat 0.50, swing 0.00, sync 0.50, composite 0.41.
+- **Drum isolation** = `(chan 9|10) AND pitch∈[35,81]` (GM percussion). NOTE: the brief's literal `OR pitch∈35–81` would match melodic notes on every channel (middle-C piano = 60) and break "drum isolation"; GM pitch numbers only MEAN drums on the drum channel, so it's an AND. Verified ch9 = GM drum channel (top pitches 42 hat / 36-35 kick / 38-40 snare / 51 ride). One documented deviation; everything else per spec.
+- The 11 LOCKED dims (= `groove_dna` array index order): `kick_density_bar, snare_backbeat_strength, hat_cym_density, perc_diversity, swing_cont, syncopation_drum, dotted_groove, ghost_dynamics, drum_pattern_entropy, bar_drum_variance, groove_composite`. All float32, NaN-safe, neutral 0.5; densities per 4/4 bar in beats (tempo-independent).
+- **`CODE/23_catalog_merge.py` patched** (non-breaking): added the 11 scalars as a source + a packed `groove_dna float32[11]` array col (parquet only — no SQL array type; sqlite keeps the 11 scalars). Catalog **148 → 160 parquet cols / 159 sqlite**, 459,805 rows unchanged, cross-check AGREE. **Also made the parquet merge idempotent** — re-running with extra sources was creating `_x/_y` duplicate cols for already-merged pillars; now it skips columns already present (mirrors the sqlite ADD-COLUMN guard). Backups: `catalog/metadata.parquet.bak_20260618_125944`, `catalog/checkpoints/catalog_20260618_125944_pre_seqmerge.sqlite`.
+- **`CODE/26_signature_extend.py` patched** — GrooveDNA is now its own pillar (`--w-groove`, default **×2** like rhythm) + a schema guard that auto-prunes any pillar whose cols aren't in the catalog yet (so it never crashes mid-build). Rebuilt **`signatures_ext.npy` N×74 → N×85** (block_dims pitch36/rhythm17/melody13/harmony8/groove11), row-norm √7=2.646, kNN refit (6s). **Sanity:** neighbor groove-block std 0.071 vs global 0.426 → feel clusters ~6× tighter. Backup: `knn_cosine.pkl.prerefit_20260618_130607.bak`.
+- **Next:** re-cluster / re-run the empty-space hunt on the N×85 space to find under-populated *groove* regions (`python3 CODE/27_emptyspace.py all` reads `signatures_ext.npy`); and wire the NinjaStar by-ear "Groove" ratings against measured GrooveDNA. NB: 27 re-normalizes each row by its actual norm at load (`U = ext/norms`), so cosine=dot still holds on N×85 — only its √5 doc-comments are stale (real norm is now √7).
 
 ### 2026-06-17 (~19:40) — Phase 11 #1 DONE: EMPTY-SPACE HUNT built + run (the payoff of vectorizing)
 - Wrote **`CODE/27_emptyspace.py`** (subcommands `cluster|density|summary|corners|show|all`, resumable; outputs under `_work/emptyspace/`). Reads `signatures_ext.npy` (N×74) read-only; unit-normalizes (norm≈√5 confirmed) so cosine = dot. Touched nothing in the NinjaStar-8 lane.

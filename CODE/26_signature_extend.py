@@ -1,6 +1,11 @@
 #!/usr/bin/env python3
 """26_signature_extend.py — extend the 36-D pitch signature with rhythm /
-melody / harmony / tempo pillars and rebuild the cosine kNN.
+melody / harmony / tempo / GrooveDNA pillars and rebuild the cosine kNN.
+
+GrooveDNA (the 11 drum-only rhythm dims from 29_groove_dna.py, merged onto the
+catalog by 23) is its own pillar, up-weighted x2 like rhythm (--w-groove), so
+drum FEEL clusters independently of pitch/harmony. Pillars whose columns are not
+yet in the catalog are auto-pruned with a warning instead of crashing.
 
 The original `signatures.npy` (N x 36) is PURE PITCH (12 pc + 12 pc-dur + 6
 interval + 6 chord-size) and carries ZERO rhythm information, so the kNN index
@@ -73,6 +78,15 @@ PILLARS = {
         "has_extended_harmony", "n_chord_segments", "harmonic_rhythm",
         "chord_change_rate", "n_distinct_chord_roots",
     ],
+    # GrooveDNA (29_groove_dna.py via 23_catalog_merge) — the drum-only rhythm
+    # vector. Its own pillar so feel clusters independently of pitch/harmony; the
+    # 11 scalars are the same dims packed into the catalog's groove_dna array col.
+    "groove": [
+        "kick_density_bar", "snare_backbeat_strength", "hat_cym_density",
+        "perc_diversity", "swing_cont", "syncopation_drum", "dotted_groove",
+        "ghost_dynamics", "drum_pattern_entropy", "bar_drum_variance",
+        "groove_composite",
+    ],
 }
 ONEHOT = {"tempo_class": ["constant", "gradual", "erratic", "rubato"]}
 DROP = ["most_common_chord"]
@@ -124,13 +138,16 @@ def main():
     ap.add_argument("--w-rhythm", type=float, default=2.0)
     ap.add_argument("--w-melody", type=float, default=1.0)
     ap.add_argument("--w-harmony", type=float, default=1.0)
+    ap.add_argument("--w-groove", type=float, default=2.0,
+                    help="GrooveDNA (drum-only rhythm) weight; up-weighted x2 like rhythm")
     ap.add_argument("--no-backup", action="store_true",
                     help="skip the in-script .bak copy (use if you already backed up)")
     ap.add_argument("--dry-run", action="store_true",
                     help="build + report the matrix but do not fit kNN or write files")
     args = ap.parse_args()
     weights = {"pitch": args.w_pitch, "rhythm": args.w_rhythm,
-               "melody": args.w_melody, "harmony": args.w_harmony}
+               "melody": args.w_melody, "harmony": args.w_harmony,
+               "groove": args.w_groove}
     t0 = time.time()
 
     # ---- load pitch signature + row order --------------------------------
@@ -141,8 +158,18 @@ def main():
     log(f"pitch signature {pitch.shape}, {len(md5s)} md5 rows")
 
     # ---- load catalog, reindex features to signature order BY md5 --------
+    # prune any pillar columns absent from the catalog so a not-yet-merged pillar
+    # (e.g. groove before 23 runs) degrades to "skipped" instead of crashing.
+    import pyarrow.parquet as pq
+    avail = set(pq.ParquetFile(META).schema.names)
+    for pillar, cols in PILLARS.items():
+        miss = [c for c in cols if c not in avail]
+        if miss:
+            log(f"WARN pillar '{pillar}': {len(miss)} cols not in catalog, dropping: {miss}")
+            PILLARS[pillar] = [c for c in cols if c in avail]
+    PILLARS_ACTIVE = [p for p in ("rhythm", "melody", "harmony", "groove") if PILLARS.get(p)]
     use_cols = ["md5"] + sum(PILLARS.values(), []) + list(ONEHOT) + DROP
-    m = pd.read_parquet(META, columns=[c for c in use_cols if c])
+    m = pd.read_parquet(META, columns=[c for c in use_cols if c in avail or c == "md5"])
     if m["md5"].duplicated().any():
         sys.exit("FATAL: duplicate md5 in catalog — cannot align")
     m = m.set_index("md5").reindex(md5s)        # align BY md5 to signature order
@@ -172,7 +199,7 @@ def main():
     names += [f"pitch_{i}" for i in range(pitch.shape[1])]
     report["pillars"]["pitch"] = {"n_cols": pitch.shape[1], "logged": [], "imputed": {}}
 
-    for pillar in ("rhythm", "melody", "harmony"):
+    for pillar in PILLARS_ACTIVE:
         cols = blocks[pillar]
         X, rep = scale_block(m[cols], pillar)
         Xlw = l2_weight(X, weights[pillar])

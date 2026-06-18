@@ -55,6 +55,14 @@ COLS_25 = [
     "dominant_function_ratio", "dissonance_mean", "dissonance_std", "progression_entropy",
     "n_key_areas", "key_changes", "key_stability", "diatonic_ratio",
 ]
+# GrooveDNA — the 11 drum-only rhythm dims (29_groove_dna.py). LOCKED order: this is
+# also the index order of the packed `groove_dna` float32[11] array added to the parquet.
+COLS_29 = [
+    "kick_density_bar", "snare_backbeat_strength", "hat_cym_density", "perc_diversity",
+    "swing_cont", "syncopation_drum", "dotted_groove", "ghost_dynamics",
+    "drum_pattern_entropy", "bar_drum_variance", "groove_composite",
+]
+GROOVE_NEUTRAL = 0.5            # neutral fill for the array so it is never NaN downstream
 BOOL_COLS = {"has_repetition", "is_swung", "is_triplet_feel", "is_dotted",
              "has_melody", "seq_ok"}
 
@@ -63,6 +71,7 @@ SOURCES = [
     (os.path.join(WORK, "rhythm_features.parquet"), COLS_22),
     (os.path.join(WORK, "melody_features.parquet"), COLS_24),
     (os.path.join(WORK, "harmony_features.parquet"), COLS_25),
+    (os.path.join(WORK, "groove_dna.parquet"), COLS_29),
 ]
 
 
@@ -105,9 +114,24 @@ def build_patch():
 def write_parquet(patch):
     full = pd.read_parquet(META_PARQUET)
     newcols = [c for c in patch.columns if c != "md5"]
-    add = patch.set_index("md5")[newcols]
+    # idempotent: only ADD columns the parquet doesn't already have (mirrors the
+    # sqlite ADD COLUMN guard). Re-running with extra sources must not create _x/_y
+    # duplicate columns for cols that were merged in a previous run.
+    parquet_new = [c for c in newcols if c not in full.columns]
+    skipped = [c for c in newcols if c in full.columns]
+    if skipped:
+        log(f"  parquet: {len(skipped)} cols already present, keeping existing values "
+            f"(not re-merging): {skipped[:4]}{'...' if len(skipped) > 4 else ''}")
+    add = patch.set_index("md5")[parquet_new]
     merged = full.merge(add, on="md5", how="left")
     assert len(merged) == len(full), "row count changed!"
+    # pack the 11 GrooveDNA scalars into one float32[11] array column for clustering/kNN.
+    # parquet ONLY (sqlite keeps the 11 inspectable scalars; arrays aren't a SQL type).
+    if all(c in merged.columns for c in COLS_29):
+        gd = merged[COLS_29].to_numpy(dtype="float32")
+        gd = np.where(np.isnan(gd), np.float32(GROOVE_NEUTRAL), gd)   # NaN-safe pack
+        merged["groove_dna"] = list(gd)
+        log(f"  packed groove_dna float32[11] array col ({len(COLS_29)} dims)")
     tmp = META_PARQUET + ".tmp"
     merged.to_parquet(tmp, index=False)
     os.replace(tmp, META_PARQUET)
@@ -162,10 +186,12 @@ def main():
     merged, newcols = write_parquet(patch)
     sql_cols = write_sqlite(patch, newcols)
 
-    # final cross-check
+    # final cross-check. groove_dna is a packed array col that lives in parquet ONLY
+    # (no SQL array type), so the parquet is expected to be exactly 1 col wider.
     pq_cols = merged.shape[1]
-    log(f"CROSS-CHECK parquet cols={pq_cols}  sqlite cols={sql_cols}  "
-        f"({'AGREE' if pq_cols == sql_cols else 'MISMATCH!'})")
+    pq_scalar_cols = pq_cols - (1 if "groove_dna" in merged.columns else 0)
+    log(f"CROSS-CHECK parquet scalar cols={pq_scalar_cols} (+groove_dna array) "
+        f"sqlite cols={sql_cols}  ({'AGREE' if pq_scalar_cols == sql_cols else 'MISMATCH!'})")
     log(f"added {len(newcols)} new columns ({n_existing} -> {pq_cols})")
     log("DONE")
 
