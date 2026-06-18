@@ -273,7 +273,37 @@ The corpus is vectorized as of 2026-06-17 15:02 (`signatures_ext.npy` N×74 + co
 
 ---
 
+## OPEN CONCERNS / KNOWN LIMITATIONS (GrooveDNA + MCP — read before extending)
+
+Honest list of things that are *deliberately* unfinished or imperfect, so nobody mistakes
+them for bugs or rediscovers them later. None block current use; all are candidates for the
+next approved pass.
+
+**GrooveDNA (`29` / catalog / signature):**
+1. **No "accent placement" / one-drop dimension.** `snare_backbeat_strength` only measures snares on **beats 2 & 4** by design. A reggae one-drop (accent kick+snare on **beat 3**, beat 1 dropped) therefore reads backbeat=0.0, and beat 3 is an on-beat so it isn't syncopation either — so a one-drop and a plain kick-on-1 pattern look nearly identical in the 11-D vector (only `kick_density`/pattern dims differ). Verified on `reggae=hhhh(ksh)hhh`: the `(ksh)` lands exactly on beat 3.0. **Fix when approved:** add a *downbeat-vs-beat-3 kick/accent balance* dim, or a 4-bin per-beat accent distribution. This would be a deliberate GrooveDNA extension (→ N×86), not a silent change.
+2. **Neutral 0.5 is overloaded.** No-drum songs AND undefined sub-features both fill 0.5, so any threshold like `groove_composite > 0.1` counts drumless songs as "groove" (it returned 0.9998). Real drum coverage is `perc_diversity > 0.5` = **67.7% (311,412 files)**. Consider a separate `has_drums` bool if a clean mask is needed downstream.
+3. **`drum_mask` deviates from the brief on purpose.** Spec said `chan 9|10 OR pitch 35-81`; shipped `chan 9|10 AND pitch 35-81` (the OR matches melodic notes on every channel and breaks isolation). The `speedy_ragtime` test (all-piano → neutral) is the proof this was right. If you ever *want* pitch-only drum detection for drums-on-a-non-9-channel files, that's a separate, explicit opt-in.
+4. **Channel 10 (0-indexed) is melodic in this corpus**, kept only as a 1-indexed-convention safety net; it adds a little noise to drum isolation for the rare file that legitimately uses ch10 melodically. Low impact (ch9 carries ~5.4M drum notes vs ch10's 464k, mostly real drums).
+5. **Tempo independence is assumed, not enforced.** Densities are per-beat (tempo-free), which is correct, but if a file's `tpb`/tempo map is broken the bar math drifts. Inherited from the cache; not re-validated here.
+
+**MCP (`30`):**
+6. **`speedy_ragtime` is a real MIDI test case, not a generated archetype** — there is no ragtime MCP *string* yet. If a ragtime archetype is wanted, a string must be authored.
+7. **Library is v0.1 and partly unverified.** techno/trap/funk/broken/shuffle live in an `UNVERIFIED` dict and are NOT generated — trap=10, funk=4, shuffle=6 steps violate the 8-positions rule and aren't user-confirmed. techno was mid-debate (`kosokoso`?) when this was written.
+8. **No matcher / no GrooveDNA persistence for generated patterns.** The string→MIDI→score loop runs in validation only; archetype vectors aren't saved, and there's no real-MIDI→closest-archetype matcher yet (only a trivial round-trip demo). Both are deferred pending approval.
+9. **Generated MIDIs are gitignored** (`*.mid`), so `rhythmexamples/*.mcp.mid` are LOCAL only — regenerate with `python3 CODE/30_mcp_groove.py generate`. They are flat/quantized reference patterns (no humanization), so `ghost_dynamics`/`swing_cont` read neutral — fine for archetypes, not for "feel" realism.
+
+**Downstream not yet touched (Grok's plan, awaiting go-ahead):** re-run the empty-space hunt on the N×85 space (`python3 CODE/27_emptyspace.py all`); pick NinjaStar Groove anchor md5s per archetype; re-stratify the ~500 rating pool by GrooveDNA cluster; wire the NinjaStar Groove slider to measured GrooveDNA.
+
+---
+
 ## SESSION LOG (append-only, newest first)
+
+### 2026-06-18 (~13:50) — MCP groove notation: parser + dependency-free MIDI generator + 5 archetypes
+- **New `CODE/30_mcp_groove.py`** — MCP ("Mini-Compact-Pattern") is a human grammar for typing a drum groove as a string, the authoring layer on top of GrooveDNA: type a string → get a MIDI + an 11-D GrooveDNA score. **Grammar:** tokens `k`=kick `s`=snare `h`=closed-hat `o`=open-hat (+`c`/`r`/`t`); `(...)` = simultaneous group; `.`/`-`/`_` = rest; **8 positions per 4/4 bar** by default; optional leading `N/M ` time-sig (so `3/4 kss` = a 3-step waltz bar).
+- **Parser** (`parse_mcp`) → step list; **generator** (`mcp_to_array` → `write_smf`) renders 4 bars to a NOTESEQ-style array and a **dependency-free Standard MIDI File** (mido/pretty_midi aren't installed) with drums on channel 9. GM map k=36 s=38 h=42 o=46 (all in GrooveDNA's 35-81 range, so generated MIDIs round-trip through 29). Flat reference velocities (kick/snare 110, hat 80, open 95).
+- **5 archetype MIDIs generated** → `rhythmexamples/<name>.mcp.mid`: `rock=(hk)h(hs)(h)(hk)(hk)(hs)(h)`, `surf=khsshhsh`, `reggae=hhhh(ksh)hhh`, `waltz=3/4 kss`, `raggaetone=khshkshh` (strings from the user/Grok MCP Library v0.1). Validation closes the loop string→MIDI→GrooveDNA and asserts musical truths: rock backbeat=1.0 (snare on 2&4), reggae one-drop backbeat=0.0, rock = strongest composite (0.44). Generated files round-trip cleanly back through TMIDIX (rock=52 ch9 notes @ pitches 36/38/42).
+- **`speedy_ragtime.mid` test case** — the pre-existing real MIDI in `rhythmexamples/` is **all piano (3112 notes, channel 0, zero drums)**; GrooveDNA scores it **NEUTRAL 0.5** across the board. That's the point: it proves drum isolation ignores melodic notes (the AND-not-OR mask), so a busy syncopated piano part can't fake a groove.
+- **Scope held:** parser + 5 archetypes + ragtime test + STATE only. Grok's other v0.1 guesses (techno/trap/funk/broken/shuffle) are kept in an `UNVERIFIED` dict but NOT generated — several violate the 8-positions rule (trap=10, funk=4, shuffle=6 steps) and aren't user-confirmed. No new features beyond the task. **Next (awaiting approval):** lock the rest of the MCP library; add a real-MIDI→closest-archetype matcher; NinjaStar Groove anchors + GrooveDNA-stratified rating pool.
 
 ### 2026-06-18 (~13:06) — GrooveDNA: 11-D drum-only Rhythm Vector built, merged, folded into the signature
 - **New `CODE/29_groove_dna.py`** — canonical 11-D GrooveDNA per song from the `NOTESEQ_DATA` cache (no re-parse; same `process_bucket`/parallel `Pool` pattern as 22). Ran full corpus in ~165s @ ~2,800 files/s → **`_work/groove_dna.parquet` (462,621 rows, 12 cols)**; **311,585 files have a real drum kit** (rest = neutral 0.5). Medians (drum files): kick/bar 2.91, backbeat 0.50, swing 0.00, sync 0.50, composite 0.41.
