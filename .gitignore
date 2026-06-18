@@ -58,6 +58,20 @@ web/vendor/
 *.log
 *.tsv
 
+# --- Defensive: any common data/corpus folder name, anywhere, fully ignored ---
+data/
+corpus/
+corpora/
+dataset/
+datasets/
+midis/
+MIDIS/
+midi/
+raw/
+raw_data/
+*_data/
+*_DATA/
+
 # --- Editor / OS cruft ---
 .claude/
 .DS_Store
