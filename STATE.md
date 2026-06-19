@@ -358,6 +358,20 @@ next approved pass.
 
 ## SESSION LOG (append-only, newest first)
 
+### 2026-06-19 — SQL Server LocalDB live; catalog fully migrated to dbo.metadata
+
+SQL query layer now available on Windows for interactive corpus exploration — nothing on the Linux/corpus side was touched.
+
+- **ODBC Driver 17 for SQL Server** installed (elevated `install_odbc17_RUNAS_ADMIN.bat`; MSI `17.10.6.1/x64` from MS CDN).
+- **uv venv** at `B:\MIDIS_ALL_REAL\.venv` (Python 3.12): pyodbc 5.3, pandas 3.0, pyarrow 24, numpy 2.4, pymssql 2.3.
+- **`CODE/migrate_to_sqlserver.py`** — written + run. Auto-detects ODBC Driver 17/18; batch-inserts via `fast_executemany`; drops `groove_dna` array col (not flat-storable); stringifies `original_paths` list with `|`. Fixed dry-run `conn.cursor()` crash + `numpy.ndarray` serialisation bug mid-run.
+- **`dbo.metadata`**: **459,805 rows × 182 cols** loaded in 137 s (~3,345 rows/s). Indexes: md5, song_id, split, key, mode, quality_flag, bpm_valid, duration_suspect.
+- **`dbo.master_manifest`**: **463,896 rows × 7 cols** loaded in 18 s (~25,757 rows/s). Index: md5.
+- **`CODE/_verify_migration.py`**: row counts + spot-checks pass — SQL is live.
+- **Re-migrate after any parquet update:** `python CODE\migrate_to_sqlserver.py --table all` (~2.5 min, drops+recreates).
+- **`HANDOFF_SQL_MIGRATION.md`** updated to reflect completed state + useful query examples.
+- **Next:** use `mssql_connect` / `mssql_run_query` MCP tools to query dbo.metadata interactively; or write `CODE/40_sql_explore.py` for taste-weighted SQL queries.
+
 ### 2026-06-18 (late evening) — TWO music-space maps + fixed a mislabeling footgun
 - **Two clickable/audible maps now, and they self-label their coordinate space** (`CODE/28_mapserver.py`, parameterized this session):
   - **PITCH/HARMONY map** — `http://127.0.0.1:8766/` — positions from the **74-D** signature (`umap2.parquet`); pitch corners; tinted by `pitch_class_entropy`.
