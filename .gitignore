@@ -80,6 +80,7 @@ raw_data/
 
 # --- Playwright/Grok bridge scratch (snapshots, console logs) ---
 .playwright-mcp/
+starmap_targets.png
 
 # --- Nested SEPARATE project (its own git repo); do not vendor it here ---
 music_rules/

@@ -60,6 +60,24 @@
 > folded 23 drum scalars (e.g., `drum_kick_density`, `drum_snare_backbeat`, `drum_swing`)
 > onto `metadata.parquet` and `catalog.sqlite` for SQL-based "feel filtering".
 
+
+> **DrumDNA v2 (2026-06-18, `CODE/35_drum_vector_v2.py`):** The research-standard upgrade to
+> DrumDNA. It expands the **468-D standalone signature** with scientifically-validated
+> descriptors and a high-fidelity HVO grid, without touching v1. **Features added:** (A)
+> **RhythmToolbox descriptors** (`polyBalance`, `polyEvenness`, `polySync`, band-split
+> syncopation/syness) — perceptually-grounded metrics for drum similarity. (B) **HVO grid**
+> (Hits, Velocity, Offset) — the 16-step grid now encodes hit probability, root-5 scaled mean
+> velocity, and signed microtiming (ahead/behind) per cell. (C) **9-voice GM mapping** —
+> expanded from v1's 3 voices to the Groove MIDI Dataset standard 9 (kick, snare, chat, ohat,
+> ltom, mtom, htom, crash, ride). **468 LOCKED dims (array index order):** 24 shared with v1
+> (20 scalars + 4 accents) + 12 RTB + 144 Hits + 144 Velocity + 144 Offset. **Normalization:**
+> 6 equal-weight L2 blocks (scalar/accent/rtb/gridH/gridV/gridO → row-norm √6). **DONE &
+> validated 2026-06-18:** extracted over all 462,621 files (311,585 with kit) →
+> `_work/drum_dna_v2.parquet` (470 cols: md5+has_drums+468); built
+> `SIGNATURES_DATA/signatures_drums_v2.npy` (459,805×468) + `SIGNATURES_DATA/knn_drums_v2.pkl`
+> (cosine kNN over 311,412 drum rows). Medians: `polybalance=0.91`, `polyevenness=5.32`,
+> `h_kick_00=0.84`. v1 files remain untouched.
+
 ---
 
 ## CURRENT STATUS (always reflects the latest session)
@@ -313,6 +331,7 @@ them for bugs or rediscovers them later. None block current use; all are candida
 next approved pass.
 
 **GrooveDNA (`29` / catalog / signature):**
+
 1. **No "accent placement" / one-drop dimension.** `snare_backbeat_strength` only measures snares on **beats 2 & 4** by design. A reggae one-drop (accent kick+snare on **beat 3**, beat 1 dropped) therefore reads backbeat=0.0, and beat 3 is an on-beat so it isn't syncopation either — so a one-drop and a plain kick-on-1 pattern look nearly identical in the 11-D vector (only `kick_density`/pattern dims differ). Verified on `reggae=hhhh(ksh)hhh`: the `(ksh)` lands exactly on beat 3.0. **Fix when approved:** add a *downbeat-vs-beat-3 kick/accent balance* dim, or a 4-bin per-beat accent distribution. This would be a deliberate GrooveDNA extension (→ N×86), not a silent change.
 2. **Neutral 0.5 is overloaded.** No-drum songs AND undefined sub-features both fill 0.5, so any threshold like `groove_composite > 0.1` counts drumless songs as "groove" (it returned 0.9998). Real drum coverage is `perc_diversity > 0.5` = **67.7% (311,412 files)**. Consider a separate `has_drums` bool if a clean mask is needed downstream.
 3. **`drum_mask` deviates from the brief on purpose.** Spec said `chan 9|10 OR pitch 35-81`; shipped `chan 9|10 AND pitch 35-81` (the OR matches melodic notes on every channel and breaks isolation). The `speedy_ragtime` test (all-piano → neutral) is the proof this was right. If you ever *want* pitch-only drum detection for drums-on-a-non-9-channel files, that's a separate, explicit opt-in.
@@ -329,7 +348,23 @@ next approved pass.
 
 ---
 
+
+### 2026-06-18 (night) — DrumDNA v2: RhythmToolbox + HVO + 9-Voice standard
+- **Research & Install:** Identified `rhythmtoolbox` as the high-ROI upgrade. Installed it in `.venv` (resolved `pretty_midi` dependency). Verified `pattlist2descriptors` returns 22 research-validated descriptors.
+- **V2 Extractor Built:** Wrote `CODE/35_drum_vector_v2.py`. Reuses v1 logic for the shared 24 scalar/accent dims to ensure exact agreement. Adds: (A) 12-dim RTB block; (B) 9-voice GM mapping; (C) 3-layer HVO grid (Hits, Velocity, Offset). 468 total dimensions.
+- **Full Corpus Extraction:** Processed 462k files in ~6 min (1335/s) → `_work/drum_dna_v2.parquet`. 311,585 files have drums.
+- **Signature & kNN:** Block-normalized (6 equal blocks) and built `SIGNATURES_DATA/signatures_drums_v2.npy` (861 MB) + `knn_drums_v2.pkl`.
+- **Verified:** Median `polyevenness=5.32`, `polybalance=0.91`, `h_kick_00=0.84`. Validated NaN-safety and locked 470-col shape.
+
 ## SESSION LOG (append-only, newest first)
+
+### 2026-06-18 (late evening) — TWO music-space maps + fixed a mislabeling footgun
+- **Two clickable/audible maps now, and they self-label their coordinate space** (`CODE/28_mapserver.py`, parameterized this session):
+  - **PITCH/HARMONY map** — `http://127.0.0.1:8766/` — positions from the **74-D** signature (`umap2.parquet`); pitch corners; tinted by `pitch_class_entropy`.
+  - **DRUM-FEEL map** — `http://127.0.0.1:8767/` — positions from the **72-D DrumDNA** drum-only vector (`umap2_drums.parquet`, built this session by `CODE/39_drum_umap.py`, 311,412 drum-bearing pts, ~9 min); drum empty-corner markers; tinted by `drum_swing`. **This is the groove map** — rhythmically-similar songs cluster here; the 4 busy-kick seed targets pull together, `b56df652` (generic-beat) sits apart.
+- **Mislabeling bug FIXED.** The viewer used to show only "colour = X" and never said what the dot POSITIONS meant, so an 8766 map (74-D pitch layout) tinted by `drum_syncopation_poly` looked like a "drum" map when its layout is pitch/harmony. Now the header prints a plain-English space label (`_space_label()` → "PITCH/HARMONY space — positions = 74-D ... · colour (tint only) = ..."), the docstring explains `--umap` chooses the space and `--color` only tints, and the launch commands are documented in-file. Also stopped tinting the pitch map with a drum stat.
+- **New `28_mapserver.py` flags:** `--umap <embedding.parquet>` (positions), `--corners pitch|drum|none`, `--color <metadata col>` (tint only), `--space-label` (override). Both servers also overlay the 5 generation-seed targets as labeled magenta stars (`_load_targets` ← `top5_targets.csv`).
+- **KEY MENTAL MODEL (avoid future confusion):** *positions = which embedding (`--umap`)*; *colour = a tint (`--color`), nothing to do with layout*. A drum-named colour on a pitch-positioned map is just a tint, not a drum map.
 
 ### 2026-06-18 (evening) — Grok-supervised loop: live pool swap (v2) + taste-propagator stub
 - **Setup:** drove the user's logged-in Grok (Heavy) via the **Playwright/CDP bridge** ([[grok-playwright-bridge]]) — read its messages, executed its concrete specs, reported results, repeated. User chose "full Grok mode," but execution stayed honest (surfaced a non-bug and a seed mismatch rather than blindly complying).

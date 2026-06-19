@@ -1,17 +1,24 @@
 #!/usr/bin/env python3
 """
-28_mapserver.py — clickable, audible map of the 74-D signature space.
+28_mapserver.py — clickable, audible map of a chosen MUSIC-EMBEDDING space.
 
-Serves an interactive 2-D scatter of the corpus (UMAP if present, else PCA). Every dot
-is a real song; CLICK a dot and it streams that song's tiny .mid and synthesizes it
-in-browser (self-hosted spessasynth, reusing the vendored engine in web/vendor/). Hover
-shows the cluster's musical caption. Colour = a musical feature (default: syncopation).
+Serves an interactive 2-D scatter of the corpus. The DOT POSITIONS come from whichever
+embedding you pass via --umap (so the map can show DIFFERENT spaces):
+  * umap2.parquet        -> PITCH/HARMONY space (74-D signature; pitch+melody+harmony)
+  * umap2_drums.parquet  -> DRUM-FEEL space (72-D DrumDNA; groove/rhythm) [CODE/39_drum_umap.py]
+The --color flag only TINTS the dots by a metadata column; it is NOT what positions them.
+The header shows a plain-English label of the active space so the two never get confused.
+
+Every dot is a real song; CLICK a dot and it streams that song's tiny .mid and synthesizes
+it in-browser (self-hosted spessasynth, reusing the vendored engine in web/vendor/).
 
 Self-contained: canvas rendering (no CDN), in-browser synth (no server-side audio).
 Local-only: AudioWorklet gets a secure context on http://127.0.0.1 automatically.
 
-  python3 CODE/28_mapserver.py [--port 8766] [--sample 40000] [--color syncopation]
-  then open http://127.0.0.1:8766/
+  # pitch/harmony map (default)
+  python3 CODE/28_mapserver.py --port 8766 --color pitch_class_entropy
+  # drum-feel map (positions from the drum vectors)
+  python3 CODE/28_mapserver.py --port 8767 --umap umap2_drums.parquet --corners drum --color drum_swing
 
 Reads (read-only): _work/emptyspace/umap2.parquet|pca2.parquet, clusters.parquet,
 cluster_summary.parquet, density.parquet, catalog/metadata.parquet, MIDIs/<2hex>/<md5>.mid,
@@ -35,6 +42,21 @@ LIKES = os.path.join(ROOT, "_work", "taste_likes.jsonl")   # ♥ point-likes
 _dlock = threading.Lock()
 
 STATE = {}   # filled by build_space() + build_duel_pool()
+# generation seed targets (highlighted as big magenta stars): _work/generation_seeds/top5_targets.csv
+TARGETS_CSV = os.path.join(ROOT, "_work", "generation_seeds", "top5_targets.csv")
+
+
+def _load_targets():
+    """List of (md5, label) for the locked generation-seed targets, or [] if none."""
+    if not os.path.exists(TARGETS_CSV):
+        return []
+    df = pd.read_csv(TARGETS_CSV)
+    out = []
+    for i, r in df.reset_index(drop=True).iterrows():
+        taste = r.get("pred_groove_taste")
+        lab = f"#{i+1}" + (f" · {float(taste):.2f}" if taste == taste else "")
+        out.append((str(r["md5"]), lab))
+    return out
 
 
 def _load_likes():
@@ -53,7 +75,7 @@ def _norm01(v, lohi):
     return np.clip((v - lo) / (hi - lo + 1e-9), -0.05, 1.05)
 
 
-def _build_dim(full, axes, sample_md5, color_md5, cap_map, corners):
+def _build_dim(full, axes, sample_md5, color_md5, cap_map, corners, targets=()):
     """Build one embedding payload (2D or 3D) for the shared sample + corner markers,
     using a normalization fixed from the FULL embedding so points & corners align."""
     idx = {h: i for i, h in enumerate(full["md5"].values)}
@@ -76,10 +98,45 @@ def _build_dim(full, axes, sample_md5, color_md5, cap_map, corners):
                 np.mean([coords[a][idx[s]] for s in present]), norm[a])), 4))
         cmark["cap"].append(cap)
         cmark["md5"].append(present[0])      # closest real song = what plays
-    return {"pts": pts, "corners": cmark}
+    # generation-seed targets: big magenta stars at their own coords
+    tmark = {a: [] for a in axes}
+    tmark["label"], tmark["md5"] = [], []
+    for md5, label in targets:
+        if md5 not in idx:
+            continue
+        for a in axes:
+            tmark[a].append(round(float(_norm01(coords[a][idx[md5]], norm[a])), 4))
+        tmark["label"].append(label)
+        tmark["md5"].append(md5)
+    return {"pts": pts, "corners": cmark, "targets": tmark}
 
 
-def build_space(sample, color_col):
+def _load_corners(spec):
+    """corners as [(caption, [md5,...])]. spec: 'pitch' (corners_blends.parquet),
+    'drum' (drum_emptyspace/drum_corners.csv), or 'none'."""
+    if spec == "none":
+        return []
+    if spec == "drum":
+        p = os.path.join(ROOT, "_work", "drum_emptyspace", "drum_corners.csv")
+        if not os.path.exists(p):
+            return []
+        df = pd.read_csv(p)
+        return [(r["caption"], str(r["songs"]).split(";")) for _, r in df.iterrows()]
+    cdf = pd.read_parquet(os.path.join(OUT, "corners_blends.parquet"))
+    return [(r["midpoint_caption"], r["nearest_songs"].split(";")) for _, r in cdf.iterrows()]
+
+
+def _space_label(umap_file, color_col):
+    """Human-readable description of what the DOT POSITIONS mean (not the colour)."""
+    if "drum" in umap_file:
+        layout = "DRUM-FEEL space — positions = 72-D DrumDNA (groove/rhythm)"
+    else:
+        layout = "PITCH/HARMONY space — positions = 74-D signature (pitch+melody+harmony)"
+    return f"{layout}  ·  colour (tint only) = {color_col}"
+
+
+def build_space(sample, color_col, umap_file="umap2.parquet", corners_spec="pitch",
+                space_label=""):
     cl = pd.read_parquet(os.path.join(OUT, "clusters.parquet"))
     sm = pd.read_parquet(os.path.join(OUT, "cluster_summary.parquet"))[["cluster_id", "caption"]]
     cap_map = cl.merge(sm, on="cluster_id", how="left").set_index("md5")["caption"].fillna("").to_dict()
@@ -90,28 +147,35 @@ def build_space(sample, color_col):
     cn = np.clip((c - clo) / (chi - clo + 1e-9), 0, 1).fillna(0.5)
     color_md5 = dict(zip(m["md5"].values, np.round(cn.values, 3)))
 
-    cdf = pd.read_parquet(os.path.join(OUT, "corners_blends.parquet"))
-    corners = [(r["midpoint_caption"], r["nearest_songs"].split(";")) for _, r in cdf.iterrows()]
+    corners = _load_corners(corners_spec)
 
-    u2 = pd.read_parquet(os.path.join(OUT, "umap2.parquet"))
-    which = "UMAP"
+    targets = _load_targets()
+    target_md5 = {m for m, _ in targets}
+
+    u2 = pd.read_parquet(os.path.join(OUT, umap_file))
+    which = "UMAP-drum" if "drum" in umap_file else "UMAP"
     rng = np.random.default_rng(0)
     allmd5 = u2["md5"].values
     take = rng.choice(len(allmd5), size=min(sample, len(allmd5)), replace=False)
     sample_md5 = [allmd5[i] for i in sorted(take)]
+    # force-include the seed targets so they always render
+    have = set(sample_md5)
+    sample_md5 += [m for m in allmd5 if m in target_md5 and m not in have]
 
     STATE["which"] = which
     STATE["color_col"] = color_col
-    STATE["2d"] = _build_dim(u2, ["x", "y"], sample_md5, color_md5, cap_map, corners)
-    n3 = os.path.join(OUT, "umap3.parquet")
+    STATE["space_label"] = space_label or _space_label(umap_file, color_col)
+    STATE["2d"] = _build_dim(u2, ["x", "y"], sample_md5, color_md5, cap_map, corners, targets)
+    n3 = os.path.join(OUT, umap_file.replace("umap2", "umap3"))
     if os.path.exists(n3):
         u3 = pd.read_parquet(n3)
-        STATE["3d"] = _build_dim(u3, ["x", "y", "z"], sample_md5, color_md5, cap_map, corners)
+        STATE["3d"] = _build_dim(u3, ["x", "y", "z"], sample_md5, color_md5, cap_map, corners, targets)
         has3 = len(STATE["3d"]["pts"]["md5"])
     else:
         STATE["3d"] = None; has3 = 0
     print(f"[map] {which} · {len(STATE['2d']['pts']['md5']):,} pts 2D / {has3:,} 3D · "
-          f"{len(STATE['2d']['corners']['cap'])} corner markers · colour={color_col}")
+          f"{len(STATE['2d']['corners']['cap'])} corner markers · "
+          f"{len(STATE['2d']['targets']['md5'])} targets · colour={color_col}")
 
 
 def build_duel_pool():
@@ -151,7 +215,7 @@ def pick_pair():
 
 PAGE = r"""<!doctype html><html><head><meta charset=utf-8>
 <meta name=viewport content="width=device-width,initial-scale=1">
-<title>Signature space — click a star to hear it</title>
+<title>Music-space map — click a star to hear it</title>
 <script type="importmap">{ "imports": { "spessasynth_core": "/web/vendor/spessasynth_core.js" } }</script>
 <style>
  html,body{margin:0;background:#07080d;color:#cfd6e6;font:13px/1.4 system-ui,sans-serif;overflow:hidden}
@@ -166,17 +230,17 @@ PAGE = r"""<!doctype html><html><head><meta charset=utf-8>
  #like.on{background:#7a1f4f;color:#fff}
 </style></head><body>
 <canvas id=c></canvas>
-<div id=hud><div><b>Signature space</b> · <span id=which></span> · <span id=n></span> songs</div>
- <div class=pill>colour = <b id=cc></b> · 🔊 <select id=sf style="background:#11151f;color:#cfd6e6;border:1px solid #232a3a;border-radius:5px;pointer-events:auto"></select> · <span class=k>drag to pan · wheel · click a star</span></div></div>
+<div id=hud><div><b id=spacelabel>—</b> · <span id=n></span> songs</div>
+ <div class=pill>🔊 <select id=sf style="background:#11151f;color:#cfd6e6;border:1px solid #232a3a;border-radius:5px;pointer-events:auto"></select> · <span class=k>positions = the space above · colour is only a tint · drag to pan · wheel · click a star</span></div></div>
 <div id=tip></div>
 <div id=now><span id=stop>■ stop</span><span id=like>♡ like</span><div class=cap id=ncap>— click a star —</div><div class=md5 id=nmd5></div></div>
 <script type="module">
 const D = await (await fetch('/points.json')).json();
-document.getElementById('which').textContent = D.which;
+document.getElementById('spacelabel').textContent = D.space_label || D.which;
 document.getElementById('n').textContent = D.pts.md5.length.toLocaleString();
-document.getElementById('cc').textContent = D.color_col;
 const P = D.pts, N = P.md5.length;
 const C = D.corners||{x:[],y:[],cap:[],md5:[]}, NC = (C.cap||[]).length;
+const T = D.targets||{x:[],y:[],label:[],md5:[]}, NT = (T.label||[]).length;
 let likes = new Set(); fetch('/likes').then(r=>r.json()).then(a=>{likes=new Set(a); draw();});
 let nowMd5 = null;
 const cv = document.getElementById('c'), g = cv.getContext('2d');
@@ -209,6 +273,17 @@ function draw(){
     g.strokeStyle = (hiC===k)?'#fff':'#ffd34d'; g.lineWidth=(hiC===k)?2.4:1.6;
     g.beginPath(); g.moveTo(X-5,Y-5); g.lineTo(X+5,Y+5); g.moveTo(X+5,Y-5); g.lineTo(X-5,Y+5); g.stroke();
     g.globalAlpha=0.5; g.beginPath(); g.arc(X,Y,9,0,7); g.stroke(); g.globalAlpha=1; }
+  // GENERATION-SEED TARGETS: big magenta stars + labels (the songs we'll seed into)
+  for(let k=0;k<NT;k++){ const X=sx(T.x[k]), Y=sy(T.y[k]);
+    if(X<-20||X>W+20||Y<-20||Y>H+20) continue;
+    g.fillStyle='#ff37d2'; g.globalAlpha=0.95;
+    g.beginPath();
+    for(let s=0;s<10;s++){ const ang=-Math.PI/2+s*Math.PI/5, rad=(s%2?3.2:8);
+      const px=X+Math.cos(ang)*rad, py=Y+Math.sin(ang)*rad; s?g.lineTo(px,py):g.moveTo(px,py); }
+    g.closePath(); g.fill();
+    g.strokeStyle='#fff'; g.lineWidth=1.2; g.stroke();
+    g.globalAlpha=1; g.fillStyle='#ffd1f4'; g.font='11px ui-monospace,monospace';
+    g.fillText(T.label[k]||'', X+11, Y+4); }
   if(hi>=0){ const X=sx(P.x[hi]), Y=sy(P.y[hi]);
     g.strokeStyle='#fff'; g.lineWidth=1.5; g.beginPath(); g.arc(X,Y,6,0,7); g.stroke(); }
   if(playIdx>=0){ const X=sx(P.x[playIdx]), Y=sy(P.y[playIdx]);
@@ -541,14 +616,18 @@ class H(BaseHTTPRequestHandler):
         if p == "/points.json":
             d = STATE["2d"]
             body = json.dumps({"which": STATE["which"], "color_col": STATE["color_col"],
-                               "pts": d["pts"], "corners": d["corners"]}).encode()
+                               "space_label": STATE.get("space_label",""),
+                               "pts": d["pts"], "corners": d["corners"],
+                               "targets": d.get("targets", {})}, default=float).encode()
             return self._send(200, "application/json", body)
         if p == "/points3.json":
             if not STATE.get("3d"):
                 return self._send(404, "application/json", b'{"error":"3d not ready"}')
             d = STATE["3d"]
             body = json.dumps({"which": STATE["which"], "color_col": STATE["color_col"],
-                               "pts": d["pts"], "corners": d["corners"]}).encode()
+                               "space_label": STATE.get("space_label",""),
+                               "pts": d["pts"], "corners": d["corners"],
+                               "targets": d.get("targets", {})}, default=float).encode()
             return self._send(200, "application/json", body)
         if p == "/likes":
             return self._send(200, "application/json", json.dumps(sorted(_load_likes())).encode())
@@ -623,8 +702,13 @@ def main():
     ap.add_argument("--port", type=int, default=8766)
     ap.add_argument("--sample", type=int, default=40000)
     ap.add_argument("--color", default="syncopation")
+    ap.add_argument("--umap", default="umap2.parquet",
+                    help="embedding parquet in _work/emptyspace (e.g. umap2_drums.parquet)")
+    ap.add_argument("--corners", default="pitch", choices=["pitch", "drum", "none"])
+    ap.add_argument("--space-label", default="",
+                    help="override the header's plain-English space description")
     a = ap.parse_args()
-    build_space(a.sample, a.color)
+    build_space(a.sample, a.color, a.umap, a.corners, a.space_label)
     build_duel_pool()
     srv = ThreadingHTTPServer(("127.0.0.1", a.port), H)
     print(f"[map]    2D    : http://127.0.0.1:{a.port}/")
