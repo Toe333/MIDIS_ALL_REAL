@@ -77,7 +77,7 @@ def _advertise_host() -> str:
 # --- the 7 axes (bipolar, 0 = low pole, 4 = neutral, 8 = high pole) ---
 # tier: core (always) | bonus (when obvious) | lightning (special). badge: felt | perceived.
 DIMS = [
-    {"key": "musicality",   "lo": "meh",        "hi": "I love this",       "tier": "core",      "badge": "felt",      "emoji": "❤️", "hint": "love-it / quality"},
+    {"key": "musicality",   "lo": "meh",        "hi": "Inevitable / Love-it","tier": "core",     "badge": "felt",      "emoji": "❤️", "hint": "love-it / quality"},
     {"key": "novelty",      "lo": "predictable","hi": "strange-but-works", "tier": "core",      "badge": "felt",      "emoji": "✨", "hint": "novelty"},
     {"key": "groove",       "lo": "no pocket",  "hi": "deep pocket",       "tier": "core",      "badge": "perceived", "emoji": "🥁", "hint": "groove (top priority)"},
     {"key": "valence",      "lo": "dark",       "hi": "bright",            "tier": "bonus",     "badge": "perceived", "emoji": "🎭", "hint": "valence"},
@@ -88,9 +88,22 @@ DIMS = [
 DIM_KEYS = [d["key"] for d in DIMS]
 EXTRA_COLS = ["confidence", "glitch_flag", "free_tag"]          # extra per-rating metadata
 META_COLS = ["rating_id", "pool_id", "md5", "repeat_of_md5", "session_id"]
-RATING_COLS = [*META_COLS, *DIM_KEYS, *EXTRA_COLS, "rated_at"]  # rated_at == spec's rating_ts
+# rating_version: additive, append-only. existing rows backfilled to 1, new rows write 2.
+RATING_COLS = [*META_COLS, *DIM_KEYS, *EXTRA_COLS, "rated_at", "rating_version"]
 INT_DIMS = [*DIM_KEYS, "confidence"]                            # 0..8 nullable ints
 SCALE_MAX = 8   # 0..8, 9 cells; half (4) = neutral
+RATING_VERSION = 2
+
+# pattern tags (v2): quick drum-feel chips appended to free_tag (not 0-8 sliders).
+PATTERN_TAGS = ["blast-16th", "rap-kh", "death-kickfest"]
+# Groove anchors: tappable reference grooves (MIDIs in rhythmexamples/, made by 30_mcp_groove).
+# Groove is the ONLY axis with visual anchors + a GrooveDNA radar overlay.
+ANCHORS = [
+    {"name": "blast",   "file": "blast.mcp.mid",   "label": "⚡ blast"},
+    {"name": "rap",     "file": "rap.mcp.mid",     "label": "🎤 old-school rap"},
+    {"name": "death",   "file": "death.mcp.mid",   "label": "💀 death kickfest"},
+    {"name": "neutral", "file": "neutral.mcp.mid", "label": "▦ neutral grid"},
+]
 
 
 # --------------------------------------------------------------------------- data
@@ -194,6 +207,22 @@ def _rated_pool_ids() -> list[str]:
     return [str(r["pool_id"]) for r in _load_ratings_rows() if r.get("pool_id")]
 
 
+_GROOVE_DF = None
+def _groove_vec(md5: str) -> dict | None:
+    """The 11-D GrooveDNA vector for one md5 from _work/groove_dna.parquet (cached)."""
+    global _GROOVE_DF
+    import pandas as pd
+    p = BASE / "_work" / "groove_dna.parquet"
+    if not p.exists():
+        return None
+    if _GROOVE_DF is None:
+        _GROOVE_DF = pd.read_parquet(p).drop_duplicates("md5").set_index("md5")
+    if not md5 or md5 not in _GROOVE_DF.index:
+        return None
+    r = _GROOVE_DF.loc[md5]
+    return {k: round(float(r[k]), 4) for k in _GROOVE_DF.columns}
+
+
 def _clamp(v):
     """0..SCALE_MAX int, else None (so un-touched/neutral-skip stays NA, not a fake 0)."""
     if v is None or v == "" or v == -1:
@@ -224,6 +253,7 @@ def _save_rating(payload: dict) -> int:
         "glitch_flag": 1 if payload.get("glitch_flag") in (1, True, "1") else 0,
         "free_tag": (str(payload["free_tag"])[:200] if payload.get("free_tag") else None),
         "rated_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        "rating_version": RATING_VERSION,        # new ratings are v2; existing backfilled to 1
     }
     for k in DIM_KEYS:
         row[k] = _clamp(values.get(k))
@@ -238,6 +268,7 @@ def _save_rating(payload: dict) -> int:
     for k in INT_DIMS:
         df[k] = df[k].astype("Int64")
     df["glitch_flag"] = df["glitch_flag"].fillna(0).astype("Int8")
+    df["rating_version"] = df["rating_version"].fillna(1).astype("Int64")   # self-healing backfill
 
     OUT.parent.mkdir(parents=True, exist_ok=True)
     tmp = OUT.with_suffix(".parquet.tmp")
@@ -287,6 +318,19 @@ PAGE = r"""<!doctype html>
   .pbar{ width:140px; height:10px; border:2px solid var(--line); margin-top:0.4rem;
          background:var(--dim); }
   .pbar > i{ display:block; height:100%; background:var(--acc); width:0%; }
+
+  .gpanel{ border:2px dashed var(--line); margin:0.6rem 0; padding:0.5rem; text-align:center; }
+  .gpanel .ghd{ font-size:0.82rem; opacity:0.95; margin-bottom:0.3rem; }
+  .gpanel .ghint{ font-size:0.72rem; opacity:0.65; margin:0.35rem 0 0.25rem; }
+  .anchors{ display:flex; flex-wrap:wrap; gap:0.35rem; justify-content:center; }
+  .anchor{ background:var(--dim); border:2px solid var(--line); color:var(--fg);
+           padding:0.35rem 0.5rem; font:inherit; font-size:0.8rem; cursor:pointer; }
+  .anchor:active{ background:var(--acc); color:#001; }
+  #gradar{ margin:0.5rem auto 0; display:block; }
+  .ptags{ display:flex; flex-wrap:wrap; gap:0.3rem; justify-content:center; margin-top:0.4rem; }
+  .ptag{ background:transparent; border:1px solid var(--line); color:var(--fg);
+         padding:0.2rem 0.45rem; font:inherit; font-size:0.72rem; cursor:pointer; border-radius:10px; }
+  .ptag.on{ background:var(--acc); color:#001; border-color:var(--acc); }
 
   .card{ border:3px solid var(--line); background:rgba(10,20,12,0.7);
          padding:1rem; box-shadow:0 0 0 3px #0b0f0b, 0 0 24px rgba(57,255,20,0.08); }
@@ -443,7 +487,7 @@ function next(first){
   curRatingId = rid('r');                           // one rating_id per slot (idempotent retries)
   const MID = Math.floor(STATE.scale_max/2);
   vals = {}; STATE.dims.forEach(d => vals[d.key] = MID);  // default neutral; repeats stay blind
-  conf = null; freeTag = ''; focus = 0;
+  conf = null; freeTag = ''; focus = 0; patternTags = new Set();   // reset per-track
   render();
   play(true);
 }
@@ -481,6 +525,55 @@ function freeTagHtml(){
     (freeTag||'').replace(/"/g,'&quot;')+'"></div>';
 }
 
+// ---- v2 groove panel: tappable anchors + GrooveDNA radar + pattern tags --------------
+let patternTags = new Set();
+const GKEYS = ['kick_density_bar','snare_backbeat_strength','hat_cym_density','perc_diversity',
+  'swing_cont','syncopation_drum','dotted_groove','ghost_dynamics','drum_pattern_entropy',
+  'bar_drum_variance','groove_composite'];
+const GNORM = { kick_density_bar:8, hat_cym_density:16, perc_diversity:12 };  // -> ~0..1
+
+function groovePanelHtml(){
+  const anchors = (STATE.anchors||[]).map(a =>
+    '<button class="anchor" onclick="playAnchor(\''+a.file+'\')">🔊 '+a.label+'</button>').join('');
+  const ptags = (STATE.pattern_tags||[]).map(t =>
+    '<button class="ptag'+(patternTags.has(t)?' on':'')+'" onclick="togglePatternTag(\''+t+'\')">'+t+'</button>').join('');
+  // advanced extras (GrooveDNA radar + optional drum-feel tags) live behind "+ more"
+  const adv = showMore
+    ? '<canvas id="gradar" width="180" height="180"></canvas>'+
+      '<div class="ghint">optional drum-feel tags:</div><div class="ptags">'+ptags+'</div>'
+    : '';
+  return '<div class="gpanel">'+
+    '<div class="ghd">🥁 Rate <b>Groove</b> on the slider above by ear — 0 = no pocket, 8 = deep pocket.</div>'+
+    '<div class="ghint">Tap to HEAR a reference beat (comparison only — does NOT change your score):</div>'+
+    '<div class="anchors">'+anchors+'</div>'+ adv +'</div>';
+}
+function togglePatternTag(t){ patternTags.has(t) ? patternTags.delete(t) : patternTags.add(t); render(); }
+function biasGroove(){ const gi = STATE.dims.findIndex(d=>d.key==='groove'); if(gi>=0) setVal(gi, 7); }
+async function playAnchor(file){
+  try{
+    await ensureAudio();
+    const midi = await (await fetch('/anchor/'+file)).arrayBuffer();
+    seq.loadNewSongList([{ binary: midi, fileName: file }]);
+    seq.currentTime = 0; loadedMd5 = '__anchor__';        // force reload of real track next play
+    if(ctx && ctx.state === 'running'){ seq.play(); }
+  }catch(e){ console.error('anchor', e); }
+}
+async function drawGroove(md5){
+  const cv = document.getElementById('gradar'); if(!cv) return;
+  let d = null; try{ d = (await (await fetch('/groove/'+md5)).json()).groove; }catch(e){}
+  const g = cv.getContext('2d'), W = cv.width, H = cv.height, cx = W/2, cy = H/2, R = Math.min(cx,cy)-14;
+  g.clearRect(0,0,W,H); const N = GKEYS.length;
+  g.strokeStyle = '#2a3a1e'; g.lineWidth = 1;
+  for(let r=0.25; r<=1.001; r+=0.25){ g.beginPath();
+    for(let i=0;i<=N;i++){ const a=-Math.PI/2+2*Math.PI*i/N, x=cx+R*r*Math.cos(a), y=cy+R*r*Math.sin(a); i?g.lineTo(x,y):g.moveTo(x,y); }
+    g.stroke(); }
+  if(!d){ g.fillStyle='#789'; g.font='11px monospace'; g.fillText('no GrooveDNA', cx-34, cy); return; }
+  g.beginPath();
+  for(let i=0;i<N;i++){ let v=d[GKEYS[i]]; if(GNORM[GKEYS[i]]) v=v/GNORM[GKEYS[i]]; v=Math.max(0,Math.min(1,v));
+    const a=-Math.PI/2+2*Math.PI*i/N, x=cx+R*v*Math.cos(a), y=cy+R*v*Math.sin(a); i?g.lineTo(x,y):g.moveTo(x,y); }
+  g.closePath(); g.fillStyle='rgba(159,208,106,0.30)'; g.strokeStyle='#9fd06a'; g.lineWidth=2; g.fill(); g.stroke();
+}
+
 function render(){
   setProgress();
   const t = cur;
@@ -494,7 +587,7 @@ function render(){
     '<div class="track"><button class="play" id="play">▶</button>'+
     '<div class="tmeta"><div class="ttitle">'+title+(t.is_repeat?' <span class="rep">↻repeat</span>':'')+'</div>'+
     '<div class="tsub">'+(sub||'')+'<span class="md5"><br>'+(t.source||'')+' · md5 '+t.md5+'</span></div></div></div>'+
-    '<div class="dims">'+dimsHtml+'</div>'+ extra +
+    '<div class="dims">'+dimsHtml+'</div>'+ groovePanelHtml() + extra +
     '<div class="bar">'+
       '<button class="act go" onclick="saveNext()">✓ SAVE+NEXT</button>'+
       '<button class="act more" onclick="toggleMore()">'+(showMore?'− less':'+ more')+'</button>'+
@@ -502,6 +595,7 @@ function render(){
       '<button class="act glitch" onclick="glitch()" title="glitch / unlistenable">🚩</button>'+
     '</div>';
   bindControls();
+  try{ drawGroove(cur.md5); }catch(e){}
 }
 
 function bindControls(){
@@ -648,7 +742,8 @@ function doSave(opts){
     repeat_of_md5: (cur.is_repeat ? (cur.repeat_of || cur.md5) : null),
     session_id: sessionId, values: values,
     confidence: conf, glitch_flag: opts.glitch ? 1 : 0,
-    free_tag: (freeTag && freeTag.trim()) ? freeTag.trim() : null,
+    free_tag: [ (freeTag && freeTag.trim()) ? freeTag.trim() : null, ...patternTags ]
+               .filter(Boolean).join(' ') || null,
     ts: Date.now(),
   };
   ratedPool.add(cur.pool_id);
@@ -705,12 +800,18 @@ class Handler(SimpleHTTPRequestHandler):
                 "rated_pool_ids": _rated_pool_ids(), # frontend skips these in the queue
                 "n_ratings": len(_load_ratings_rows()),
                 "soundfonts": _list_soundfonts(),
+                "pattern_tags": PATTERN_TAGS,        # v2: drum-feel chips -> free_tag
+                "anchors": ANCHORS,                  # v2: tappable groove references
             }
             return self._json(200, payload)
+        if path.startswith("/groove/"):
+            return self._json(200, {"groove": _groove_vec(path[len("/groove/"):].strip())})
         if path == "/export":
             return self._json(200, {"ratings": _load_ratings_rows()})
         if path.startswith("/midi/"):
             return self._serve_midi(path[len("/midi/"):])
+        if path.startswith("/anchor/"):
+            return self._serve_anchor(path[len("/anchor/"):])
         if path.startswith("/soundfont/"):
             return self._serve_soundfont(path[len("/soundfont/"):])
         if path.startswith("/web/"):
@@ -742,6 +843,17 @@ class Handler(SimpleHTTPRequestHandler):
             return self.send_error(404)
         fp = (MIDI_DIR / md5[:2] / f"{md5}.mid").resolve()
         if MIDI_DIR.resolve() not in fp.parents or not fp.is_file():
+            return self.send_error(404)
+        return self._serve_ranged(fp, "audio/midi")
+
+    def _serve_anchor(self, name: str):
+        import urllib.parse, re
+        nm = urllib.parse.unquote(name).strip()
+        if not re.fullmatch(r"[A-Za-z0-9_.-]+\.mid", nm):   # safe filename only
+            return self.send_error(404)
+        adir = (BASE / "rhythmexamples").resolve()
+        fp = (adir / nm).resolve()
+        if adir not in fp.parents or not fp.is_file():
             return self.send_error(404)
         return self._serve_ranged(fp, "audio/midi")
 

@@ -77,3 +77,9 @@ raw_data/
 .DS_Store
 *.swp
 *~
+
+# --- Playwright/Grok bridge scratch (snapshots, console logs) ---
+.playwright-mcp/
+
+# --- Nested SEPARATE project (its own git repo); do not vendor it here ---
+music_rules/

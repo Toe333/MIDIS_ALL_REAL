@@ -30,11 +30,44 @@
 > (`27_emptyspace.py`): find under-populated regions of *groove* space, not just
 > pitch/harmony space, to target genuinely novel rhythmic feels.
 
+> **DrumDNA (2026-06-18, `CODE/31_drum_vector.py`):** GrooveDNA's bigger sibling — a
+> **72-D *standalone* drum signature** with its **own `.npy` matrix + cosine kNN**, so you
+> can search/cluster purely by DRUM FEEL and even find "the same beat", independent of
+> pitch/harmony/melody. Same proven isolation as 29 (`chan 9|10` AND GM pitch `35–81`),
+> same per-4/4-bar-in-beats normalization. **72 LOCKED dims (array index order):**
+> 20 scalars (`kick/snare/hat/cymbal/tom/total_density, perc_diversity, kick_on_downbeat,
+> snare_backbeat, kick_snare_interlock, swing, laidback, timing_tightness,
+> syncopation_poly, ghost_dynamics, accent_strength, pattern_entropy, bar_variance,
+> symmetry, pulse_clarity`) + 4 per-beat accent shares (`beat1..4_accent`; one-drop = beat-3
+> heavy — closes STATE Open Concern #1) + a 48-D **per-voice 16-step onset grid**
+> (kick/snare/hat probability over the bar's 16 sixteenths — the "eigenrhythm" fingerprint,
+> the single most discriminative feature for same-beat retrieval). Research-grounded
+> (GrooveToolbox/Bruford, HVO/MGT, Longuet-Higgins & Lee metric salience, Columbia
+> eigenrhythm). All float32; **a song with no kit → all-zero with `has_drums=0`** (cleaner
+> than 29's overloaded 0.5). **Why separate from GrooveDNA:** 29's 11-D is folded into the
+> 85-D combined signature and up-weighted for *clustering the whole corpus*; DrumDNA is a
+> first-class, higher-resolution *drum-only* space for "find this exact feel". **DONE &
+> verified 2026-06-18:** extracted over all 462,621 cached files (311,585 have a kit) →
+> `_work/drum_dna.parquet` (74 cols: md5 + has_drums + 72); built
+> `SIGNATURES_DATA/signatures_drums.npy` (459,805×72, aligned to `signatures_md5.txt`,
+> three equal-weight L2 blocks scalar20/accent4/grid48 → row-norm √3) +
+> `SIGNATURES_DATA/knn_drums.pkl` (cosine kNN over the 311,412 drum-bearing rows). Existing
+> `signatures*.npy` / `knn_cosine.pkl` and the NinjaStar lane were NOT touched.
+> **Empty-Space Hunt (DrumDNA):** `CODE/32_drum_emptyspace.py` run on the 311k drum-active
+> subset found 30 coherent-but-empty drum corners (pop=0 within cos≈0.85); top corner
+> feels: `no-backbeat · swung(0.50) · sync(0.36) · loose-timing`. **Audio rendered:**
+> `_work/drum_emptyspace/corner_audio/*.wav`. **Catalog enriched:** `CODE/33_drum_catalog.py`
+> folded 23 drum scalars (e.g., `drum_kick_density`, `drum_snare_backbeat`, `drum_swing`)
+> onto `metadata.parquet` and `catalog.sqlite` for SQL-based "feel filtering".
+
 ---
 
 ## CURRENT STATUS (always reflects the latest session)
 
-**As of 2026-06-18 ~13:06 — GROOVEDNA SHIPPED: signature extended N×74 → N×85 with a dedicated drum-only RHYTHM pillar (×2 weight) and cosine kNN refit. Drum FEEL is now its own clusterable axis. (Prior: 2026-06-17 finish line, N×74 pitch+rhythm+melody+harmony.) The corpus is VECTORIZED / experiment-ready — every song is a point in a space that includes both time-feel AND drum-pattern feel.**
+**As of 2026-06-18 (evening) — FIRST taste→pool→propagate loop closed (under Grok supervision via the Playwright bridge).** Live NinjaStar pool swapped to a 500-song **rhythm-heavy stratified set** (`_work/pool_v2.parquet`, now `pool_current.txt`; 73% drum-bearing, all 88 eligible empty-corner songs force-included, balanced over groove deciles) and the systemd service restarted on its pinned port 8780 — phone queue is now the new set, all 283 ratings preserved (md5-keyed). A **taste-propagator STUB** (`CODE/37_taste_stub.py`, Ridge on the 85-D signature → user groove rating, GrooveDNA block ×5) was trained on the 128 v2 groove ratings and predicted over all 459,805 → `_work/taste_pred.parquet`; 5-fold CV **pearson r=+0.318, MAE=2.00** (weak but real — needs more groove truth). Pool builder is `CODE/36_pool_preview.py`. **Open loop:** generation-seed selection (global-top vs empty-corner top-5) was the live question to Grok at stop time. Signature still N×85. (Prior: 2026-06-18 ~15:30 GrooveDNA+MCP+NinjaStar-v2; 2026-06-17 finish line N×74.) **Strategic frame below still holds: coordinates over labels; hunt empty space and LISTEN.**
+
+> ### ⭐ STRATEGIC FRAME (why we measure coordinates, not genres)
+> A machine *can* tag rock/rap/jazz and detect beats (audio: librosa/madmom/Essentia/Spotify-features; symbolic: research-grade MIDI genre classifiers). **But a classifier maps music into buckets that already exist — it describes the past and pulls toward the average. The north star (invent a new form of music) needs the opposite:** a continuous coordinate space (our 85-D vector incl. GrooveDNA) where *gaps* are visible. A label says "this is rock"; coordinates say "this sits here, and over *there* is empty — go make that." So: GrooveDNA (the 11 numbers) = the right primitive and it's DONE. A pretrained genre tag would be a nice optional metadata column, not the quest. The MCP notation/archetypes + NinjaStar anchor UI were partly **tools-for-tools / scope creep** — keep the archetypes only as ear-reference probes; don't build them out further until the core experiment proves it needs them. **Core experiment = empty-space hunt (`27_emptyspace.py all`) on N×85, cross-referenced with [[taste-anchor-songs]], then generate a few candidates and listen.**
 
 > ### ▶ NEXT SESSION — START HERE (corpus lane)
 > **Two parallel lanes now:** (A) **corpus / Phase 11** — this pointer; (B) **NinjaStar-8 annotator**
@@ -297,6 +330,30 @@ next approved pass.
 ---
 
 ## SESSION LOG (append-only, newest first)
+
+### 2026-06-18 (evening) — Grok-supervised loop: live pool swap (v2) + taste-propagator stub
+- **Setup:** drove the user's logged-in Grok (Heavy) via the **Playwright/CDP bridge** ([[grok-playwright-bridge]]) — read its messages, executed its concrete specs, reported results, repeated. User chose "full Grok mode," but execution stayed honest (surfaced a non-bug and a seed mismatch rather than blindly complying).
+- **(a) Ratings parquet verified:** `_work/ninjastar8_ratings.parquet` = **283 rows** (rating_version v1=155, v2=128), correcting Grok's stale "155/2-of-10". All 128 v2 rows have `groove` set across 128 unique md5s, full 0–8 spread. **Anchor-tag persistence is NOT a bug** — `ninjastar8.py:745` already folds the pattern chips into `free_tag`; the chips are just optional/hidden behind "+ more" and weren't tapped (the one tagged row is `groove=0`, a test row). Did NOT "fix" it (auto-tagging on anchor-*play* would corrupt compare-vs-label semantics).
+- **(b) Pool preview → live swap:** wrote **`CODE/36_pool_preview.py`** (clean = `parses & !zero_byte & !absurd_density & !over_1h & in_piano_range` → 455,385/459,805; weight `exp(0.6·z(bar_variance+pattern_entropy+syncopation+0.5·swing)) ×3 drums ×4 empty-corner`, stratified over groove_composite deciles, all 88 eligible empty-corner md5s force-included). Result `_work/pool_v2.parquet` (500, 73% drum-bearing). **Swapped live with user's OK:** backed up `pool_current.txt` → `.bak_pre_v2`, pointed it at `pool_v2.parquet`, restarted the **systemd --user `ninjastar8.service`** on its pinned port **8780** (Tailscale `lab.tail0b3418.ts.net` → 8780). Cleaned up a duplicate-process / wrong-port (8781) tangle from the restart; verified single process serving v2 (`first_pool_id v2_0001`), 283 ratings intact.
+- **(c) Taste-propagator STUB:** **`CODE/37_taste_stub.py`** — Ridge(α=10) on the 85-D `signatures_ext.npy` (GrooveDNA block `[74:85]` ×5) → user groove rating; trained on 128 v2 ratings, predicted all 459,805 → `_work/taste_pred.parquet`. **5-fold CV pearson r=+0.318, MAE=2.00 (0–8)** — weak but real; ceiling-saturated (13 songs pegged at 8.0).
+- **Generation seeds (open):** Grok's `nlargest(5)` snippet picked **global** top-taste (0/5 in empty corners). Flagged it; the right empty-corner seeds are `b56df652(7.08) 622f340d(6.91) f96decc4(6.85) 41277f13(6.83) cf698cb6(6.73)`. Posed A(global)/B(empty-corner) to Grok — **awaiting its answer at stop time** (it was mid-generating "the first 5 rhythm seeds"). Note: Grok briefly degenerated into a repetitive paste-loop, self-corrected after the user called it out.
+- **Repo hygiene:** added `.playwright-mcp/` (bridge scratch) and nested separate repo `music_rules/` to `.gitignore`. All data artifacts under `_work/` remain gitignored.
+
+### 2026-06-18 (~17:50) — DrumDNA: Empty-Space Hunt + Catalog Integration + Unit Tests
+- **Empty-Space Hunt in DrumDNA:** Wrote `CODE/32_drum_emptyspace.py` to map the 311k drum-active manifold. Clustered to k=800; identified 30 coherent-but-empty corners (pop=0 within cos≈0.85). These are "unwritten" rhythmic directions (e.g. no-backbeat swung-sync, busy-kick loose-timing).
+- **Drum Corner Audio:** Rendered the nearest real songs for the top 15 drum corners to `_work/drum_emptyspace/corner_audio/*.wav` using `fluidsynth` (VintageDreams SF2).
+- **SQL Catalog Integration:** Wrote `CODE/33_drum_catalog.py` to fold 23 drum scalars (renamed with `drum_` prefix, e.g. `drum_kick_density`, `drum_swing`, `drum_beat3_accent`) into `catalog.sqlite` and `metadata.parquet`. Verified 459k rows, 183 cols (sqlite) / 184 cols (parquet).
+- **Unit Tests:** Created `CODE/test_drum_vector.py` (unittest) to verify `drum_of` musical truths. Passes for: empty inputs, melodic isolation, rock backbeat (1.0), one-drop (beat-3 heavy), swing detection (straight vs shuffle), and microtiming (laidback vs pushed).
+- **Strategic Payoff:** The corpus is now searchable and clusterable purely by "feel". You can query `SELECT * FROM catalog WHERE drum_beat3_accent > 0.8` to find all one-drops instantly.
+
+### 2026-06-18 (~16:40) — DrumDNA: 72-D standalone drum signature + cosine kNN (separate drum vector)
+- **User ask:** "make a separate vector for the drums (channel 10)" → "research best features and execute". Built **`CODE/31_drum_vector.py`** — a dedicated **72-D drum signature** (GrooveDNA's bigger sibling), with its OWN matrix + kNN so you can search/cluster purely by drum feel, independent of pitch/harmony.
+- **Feature set (research-grounded:** GrooveToolbox/Bruford, HVO/MGT, Longuet-Higgins & Lee metric salience, Columbia eigenrhythm**)** — 72 LOCKED dims: **20 scalars** (per-voice + total density, perc_diversity, kick_on_downbeat, snare_backbeat, kick_snare_interlock, swing, laidback microtiming, timing_tightness, LHL syncopation_poly, ghost_dynamics, accent_strength, pattern_entropy, bar_variance, symmetry, pulse_clarity) + **4 per-beat accent shares** (beat1..4 — one-drop = beat-3 heavy, closes Open Concern #1) + a **48-D per-voice 16-step onset grid** (kick/snare/hat probability over the bar — the eigenrhythm fingerprint, best same-beat discriminator).
+- **Isolation identical to 29** (`chan 9|10` AND GM pitch `35–81`) so both vectors agree on "drums"; densities per 4/4 bar in beats (tempo-independent). **No-kit song → all-zero vector + `has_drums=0`** (cleaner than 29's overloaded 0.5; drum songs fall back to per-dim neutral).
+- **Extracted full corpus** (~2,000 files/s, 12 workers, ~4 min) → **`_work/drum_dna.parquet` (462,621 rows, 74 cols)**; **311,585 have a real kit**. Medians (drum files): kick/bar 2.91, backbeat 0.50, swing 0.00, sync 0.00, grid-entropy 0.83, beat3_accent 0.24.
+- **`signature` mode** aligned DrumDNA to `signatures_md5.txt` order, scaled 3 equal-weight L2 blocks (scalar20/accent4/grid48 → constant row-norm √3) and zeroed drumless rows → **`SIGNATURES_DATA/signatures_drums.npy` (459,805×72, 132 MB)** + **`knn_drums.pkl`** (cosine kNN over the 311,412 drum rows only). **Existing `signatures*.npy` / `knn_cosine.pkl` and the whole NinjaStar lane were NOT touched.**
+- **Validated** (`--validate` on buckets 00,42): locked 74-col shape, float32, NaN-safe, drumless→all-zero, sane reads. **kNN sanity:** a clear backbeat rock query returns a coherent same-feel cluster (neighbors backbeat 0.98–1.00, straight, kick 3–7/bar; cos 0.13–0.15).
+- **Next (awaiting go-ahead):** optionally surface DrumDNA in an empty-space "find the unwritten *beat*" hunt (run `27`-style frontier on `signatures_drums.npy`); or fold a down-projected DrumDNA into the catalog for SQL filtering. Not done — kept scope to the separate vector + its kNN.
 
 ### 2026-06-18 (~13:50) — MCP groove notation: parser + dependency-free MIDI generator + 5 archetypes
 - **New `CODE/30_mcp_groove.py`** — MCP ("Mini-Compact-Pattern") is a human grammar for typing a drum groove as a string, the authoring layer on top of GrooveDNA: type a string → get a MIDI + an 11-D GrooveDNA score. **Grammar:** tokens `k`=kick `s`=snare `h`=closed-hat `o`=open-hat (+`c`/`r`/`t`); `(...)` = simultaneous group; `.`/`-`/`_` = rest; **8 positions per 4/4 bar** by default; optional leading `N/M ` time-sig (so `3/4 kss` = a 3-step waltz bar).
