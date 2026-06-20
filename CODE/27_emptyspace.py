@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-27_emptyspace.py — Phase 11 #1: the EMPTY-SPACE HUNT over the 74-D signature.
+27_emptyspace.py — Phase 11 #1: the EMPTY-SPACE HUNT over the N×88 signature.
 
 The payoff of vectorizing. Maps where the 459,805 songs sit dense vs sparse in the
 extended signature space (pitch+rhythm+melody+harmony, rhythm ×2), then surfaces
@@ -8,9 +8,9 @@ extended signature space (pitch+rhythm+melody+harmony, rhythm ×2), then surface
 almost nobody has written in. Those corners are the candidate "new forms of music".
 
 Reads (never writes) the build artifacts:
-  SIGNATURES_DATA/signatures_ext.npy   (N x 74, L2-per-pillar, rhythm ×2; norm≈√5)
+  SIGNATURES_DATA/signatures_ext.npy   (N x 88, L2-per-pillar, rhythm & groove ×2; norm≈√7)
   SIGNATURES_DATA/signatures_md5.txt   (row -> md5)
-  catalog/metadata.parquet             (148 cols, for human-readable descriptions)
+  catalog/metadata.parquet             (200 cols, for human-readable descriptions)
 
 Writes everything under _work/emptyspace/ (resumable; each stage cached):
   clusters.parquet        md5 -> cluster_id              (stage: cluster)
@@ -42,16 +42,18 @@ SIG  = os.path.join(ROOT, "SIGNATURES_DATA")
 OUT  = os.path.join(ROOT, "_work", "emptyspace")
 os.makedirs(OUT, exist_ok=True)
 
-BLOCK_DIMS = {"pitch": 36, "rhythm": 17, "melody": 13, "harmony": 8}
+# informational only (the code unit-normalizes the whole row; it never slices by block)
+BLOCK_DIMS = {"pitch": 36, "rhythm": 20, "melody": 13, "harmony": 8, "groove": 11}  # = 88
 
 # catalog columns used to describe a region in human/musical terms
-DESC_NUM = ["bpm", "swing_bur", "syncopation", "note_density", "polyphony_density",
+DESC_NUM = ["bpm", "felt_bpm", "swing_bur", "syncopation", "note_density", "polyphony_density",
             "mel_stepwise_ratio", "mel_leap_ratio", "mel_chromaticism",
             "diatonic_ratio", "chord_density", "harmonic_rhythm", "n_key_areas",
             "duration_sec"]
 DESC_FRAC = ["is_swung", "is_dotted", "is_triplet_feel", "has_melody",
              "has_extended_harmony"]
-DESC_CAT = ["genre_hint", "key", "mode", "tempo_class"]
+# ts_final = the corrected ear-validated meter (now drives clustering, so caption it)
+DESC_CAT = ["genre_hint", "key", "mode", "tempo_class", "ts_final"]
 
 
 # ----------------------------------------------------------------------------- io
@@ -177,6 +179,10 @@ def _phrase(d):
     tc = d.get("tempo_class", ("?", 0))[0]
     bpm = d.get("bpm")
     if bpm == bpm: bits.append(f"{bpm:.0f}bpm {tc}")
+    fb = d.get("felt_bpm")
+    if fb == fb and bpm == bpm and abs(fb - bpm) >= 5: bits.append(f"felt{fb:.0f}")
+    ts = d.get("ts_final", ("?", 0))[0]
+    if ts and ts not in ("?", "4/4"): bits.append(ts)   # surface non-4/4 meters
     if d.get("is_swung", 0) > 0.25: bits.append(f"swung({d.get('swing_bur',0):.2f})")
     if d.get("is_triplet_feel", 0) > 0.25: bits.append("triplet-feel")
     if d.get("is_dotted", 0) > 0.30: bits.append("dotted")

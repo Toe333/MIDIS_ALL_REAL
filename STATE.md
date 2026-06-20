@@ -427,6 +427,16 @@ next approved pass.
 
 ## SESSION LOG (append-only, newest first)
 
+### 2026-06-20 (later still) — re-ran the EMPTY-SPACE HUNT on the new N×88 space
+
+`CODE/27_emptyspace.py all` over `signatures_ext.npy` (N×88). NB: the prior emptyspace outputs were from **2026-06-17 and built on N×74** — they predated even the GrooveDNA N×85 rebuild, so this is the first hunt that sees rhythm/groove AND the corrected tempo/meter. Old outputs backed up to `_work/emptyspace/_n85_backup_20260620_075510/`. ~14 min total (density full pass dominates).
+
+- **Cluster:** 1200 spherical MiniBatchKMeans clusters over 459,805×88, sizes 52–1539, **0 empty**, inertia 132,794.
+- **Density/frontier (full 460k):** mean cos-dist to 25-NN → med **0.140** max **0.458** (was med 0.121 / max 0.382 on N×74 — the space is slightly more spread now that meter+tempo+groove add real structure).
+- **Corners:** 59,885 candidate anchor pairs in sim-band [0.3,0.75] of 605 dense anchors → **60 empty blends + 60 isolated pockets** (`corners_blends.parquet`, `corners_isolated.parquet`). Blend `nearest_sim` median 0.817 (coherent, not voids); pair_sim 0.30–0.56.
+- **The space genuinely moved:** the new blend corners' nearest-real-song sets share only **3 songs (~0% Jaccard)** with the old N×74 hunt. Top new blends span e.g. `103bpm dotted · sync0.63 · ext-harm`, `121bpm triplet-feel · chord_dens4.61`, `78bpm erratic · sync0.67`. Top isolated pocket: cluster 273 `115bpm swung(1.37) · sync0.90` (iso 0.265).
+- Script doc/constant refresh: `BLOCK_DIMS` now reflects 88 (pitch36/rhythm20/melody13/harmony8/groove11; informational only — code unit-normalizes the whole row), header says N×88. **Open follow-ups:** (a) corner *captions* still use raw `bpm` and omit `ts_final`/`felt_bpm`, so the new meter/tempo structure isn't visible in the text — add to `DESC_NUM`/`DESC_CAT` if we want to read corners by meter; (b) not yet rendered to audio/webplayer (the old run did top-10); (c) the 3D/2D mapserver UMAPs (`umap2/3.*`) are still N×74-era — re-embed if we want the visual map to match.
+
 ### 2026-06-20 (later) — refreshed signature/kNN RHYTHM block with corrected tempo/meter (no regression)
 
 Folded the just-merged ear-validated detection columns into the rhythm pillar so the kNN finally clusters on **meter** and **perceptual tempo**, not just beat-relative feel. **`signatures_ext.npy` is now N×88** (was 85); rhythm block 17→20 dims.
