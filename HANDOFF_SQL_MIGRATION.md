@@ -196,7 +196,7 @@ C:\Users\sdz\.venv_midis\Scripts\python.exe B:\MIDIS_ALL_REAL\CODE\migrate_to_sq
 ```
 
 The migration script (`CODE/migrate_to_sqlserver.py`) needs to be written. It should:
-- Read `B:\MIDIS_ALL_REAL\catalog\metadata.parquet` (459,805 rows × 148 cols) via `pandas.read_parquet`
+- Read `B:\MIDIS_ALL_REAL\catalog\metadata.parquet` (459,805 rows × ~201 cols as of 2026-06-20; was 148 when first written) via `pandas.read_parquet`
 - Read `B:\MIDIS_ALL_REAL\catalog\master_manifest.parquet` (463,896 rows) via `pandas.read_parquet`
 - Connect to LocalDB via:
   ```python

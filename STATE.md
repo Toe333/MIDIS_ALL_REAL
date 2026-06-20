@@ -47,7 +47,7 @@
 > (GrooveToolbox/Bruford, HVO/MGT, Longuet-Higgins & Lee metric salience, Columbia
 > eigenrhythm). All float32; **a song with no kit → all-zero with `has_drums=0`** (cleaner
 > than 29's overloaded 0.5). **Why separate from GrooveDNA:** 29's 11-D is folded into the
-> 85-D combined signature and up-weighted for *clustering the whole corpus*; DrumDNA is a
+> 88-D combined signature and up-weighted for *clustering the whole corpus*; DrumDNA is a
 > first-class, higher-resolution *drum-only* space for "find this exact feel". **DONE &
 > verified 2026-06-18:** extracted over all 462,621 cached files (311,585 have a kit) →
 > `_work/drum_dna.parquet` (74 cols: md5 + has_drums + 72); built
@@ -149,12 +149,14 @@ The current pipeline has these known rhythm detection failures, confirmed by ear
 
 ## CURRENT STATUS (always reflects the latest session)
 
+**As of 2026-06-20 (latest) — signature refreshed to N×88, empty-space hunt re-run, docs brought current.** The rhythm pillar now folds in the corrected tempo/meter (`felt_bpm`, `ts_num`, `ts_compound`) → **`SIGNATURES_DATA/signatures_ext.npy` is N×88** (pitch 36 / rhythm 20 / melody 13 / harmony 8 / groove 11; rhythm & groove ×2-weighted), cosine `knn_cosine.pkl` refit, validated no-regression (meter & felt-tempo now cluster; swing/sync unchanged). The empty-space hunt was **re-run on N×88** (`_work/emptyspace/`: 1200 clusters, 60 blends + 60 isolated, captioned with meter+felt-tempo; ~0% corner overlap with the old N×74 run; top-10 in webplayer group `emptyspace_n88`). MANUAL.md + this file's evergreen reference sections updated to 88-D / ~201 cols; obsolete handoffs removed. **Use `signatures_ext.npy` (N×88) + `knn_cosine.pkl` going forward.** Next steps catalogued in `TASKS_NEXT.md`. See top Session Log entries.
+
 **As of 2026-06-20 — DETECTION-ACCURACY PASS done & merged into the catalog.** The #1-priority "fix the data" work: BPM (`tempos[0]` bug, 13.5% of corpus wrong), real-meter recovery (hybrid `ts_final`), `felt_bpm` (half/double), and key-confidence (`key_corr`, was a broken metric) are all fixed and **folded additively into `metadata.parquet`/`catalog.sqlite`** (18 new `*_v2` cols; originals kept). Ear-validated on 5 songs (BPM 60→80%, KEY 100%, TS 100%). Drum density investigated → fine at scale (no re-derive needed). See top Session Log entry. **Use `bpm_v2`/`ts_final`/`key_v2`+`key_corr` going forward.** (Prior status below still holds for the taste/empty-space lane.)
 
-**As of 2026-06-18 (evening) — FIRST taste→pool→propagate loop closed (under Grok supervision via the Playwright bridge).** Live NinjaStar pool swapped to a 500-song **rhythm-heavy stratified set** (`_work/pool_v2.parquet`, now `pool_current.txt`; 73% drum-bearing, all 88 eligible empty-corner songs force-included, balanced over groove deciles) and the systemd service restarted on its pinned port 8780 — phone queue is now the new set, all 283 ratings preserved (md5-keyed). A **taste-propagator STUB** (`CODE/37_taste_stub.py`, Ridge on the 85-D signature → user groove rating, GrooveDNA block ×5) was trained on the 128 v2 groove ratings and predicted over all 459,805 → `_work/taste_pred.parquet`; 5-fold CV **pearson r=+0.318, MAE=2.00** (weak but real — needs more groove truth). Pool builders: `CODE/36_pool_preview.py` (the live v2) and `CODE/38_pool_sampler_v2.py` (Grok-spec 512-row rhythm-weighted, staged not deployed). **Generation seeds RESOLVED = option B (top-5 empty-corner targets):** `b56df652, 622f340d, f96decc4, 41277f13, cf698cb6` (pred groove-taste 6.73–7.08) → `_work/generation_seeds/top5_targets.csv`, and rendered to audio (`_work/seed_audio/*.wav`, in webplayer group `empty-corner-targets`) so they can be auditioned. Signature still N×85. (Prior: 2026-06-18 ~15:30 GrooveDNA+MCP+NinjaStar-v2; 2026-06-17 finish line N×74.) **Strategic frame below still holds: coordinates over labels; hunt empty space and LISTEN.**
+**As of 2026-06-18 (evening) — FIRST taste→pool→propagate loop closed (under Grok supervision via the Playwright bridge).** Live NinjaStar pool swapped to a 500-song **rhythm-heavy stratified set** (`_work/pool_v2.parquet`, now `pool_current.txt`; 73% drum-bearing, all 88 eligible empty-corner songs force-included, balanced over groove deciles) and the systemd service restarted on its pinned port 8780 — phone queue is now the new set, all 283 ratings preserved (md5-keyed). A **taste-propagator STUB** (`CODE/37_taste_stub.py`, Ridge on the 85-D signature → user groove rating, GrooveDNA block ×5) was trained on the 128 v2 groove ratings and predicted over all 459,805 → `_work/taste_pred.parquet`; 5-fold CV **pearson r=+0.318, MAE=2.00** (weak but real — needs more groove truth). Pool builders: `CODE/36_pool_preview.py` (the live v2) and `CODE/38_pool_sampler_v2.py` (Grok-spec 512-row rhythm-weighted, staged not deployed). **Generation seeds RESOLVED = option B (top-5 empty-corner targets):** `b56df652, 622f340d, f96decc4, 41277f13, cf698cb6` (pred groove-taste 6.73–7.08) → `_work/generation_seeds/top5_targets.csv`, and rendered to audio (`_work/seed_audio/*.wav`, in webplayer group `empty-corner-targets`) so they can be auditioned. Signature was N×85 at this point (now N×88 — see the latest block above). (Prior: 2026-06-18 ~15:30 GrooveDNA+MCP+NinjaStar-v2; 2026-06-17 finish line N×74.) **Strategic frame below still holds: coordinates over labels; hunt empty space and LISTEN.**
 
 > ### ⭐ STRATEGIC FRAME (why we measure coordinates, not genres)
-> A machine *can* tag rock/rap/jazz and detect beats (audio: librosa/madmom/Essentia/Spotify-features; symbolic: research-grade MIDI genre classifiers). **But a classifier maps music into buckets that already exist — it describes the past and pulls toward the average. The north star (invent a new form of music) needs the opposite:** a continuous coordinate space (our 85-D vector incl. GrooveDNA) where *gaps* are visible. A label says "this is rock"; coordinates say "this sits here, and over *there* is empty — go make that." So: GrooveDNA (the 11 numbers) = the right primitive and it's DONE. A pretrained genre tag would be a nice optional metadata column, not the quest. The MCP notation/archetypes + NinjaStar anchor UI were partly **tools-for-tools / scope creep** — keep the archetypes only as ear-reference probes; don't build them out further until the core experiment proves it needs them. **Core experiment = empty-space hunt (`27_emptyspace.py all`) on N×85, cross-referenced with [[taste-anchor-songs]], then generate a few candidates and listen.**
+> A machine *can* tag rock/rap/jazz and detect beats (audio: librosa/madmom/Essentia/Spotify-features; symbolic: research-grade MIDI genre classifiers). **But a classifier maps music into buckets that already exist — it describes the past and pulls toward the average. The north star (invent a new form of music) needs the opposite:** a continuous coordinate space (our 88-D vector incl. GrooveDNA) where *gaps* are visible. A label says "this is rock"; coordinates say "this sits here, and over *there* is empty — go make that." So: GrooveDNA (the 11 numbers) = the right primitive and it's DONE. A pretrained genre tag would be a nice optional metadata column, not the quest. The MCP notation/archetypes + NinjaStar anchor UI were partly **tools-for-tools / scope creep** — keep the archetypes only as ear-reference probes; don't build them out further until the core experiment proves it needs them. **Core experiment = empty-space hunt (`27_emptyspace.py all`) on N×88, cross-referenced with [[taste-anchor-songs]], then generate a few candidates and listen.**
 
 > ### ▶ NEXT SESSION — START HERE (corpus lane)
 > **Two parallel lanes now:** (A) **corpus / Phase 11** — this pointer; (B) **NinjaStar-8 annotator**
@@ -162,15 +164,15 @@ The current pipeline has these known rhythm detection failures, confirmed by ear
 > `ninjastar8.py` / `_work/ninjastar8_ratings.parquet` / `soundfonts/` / `web/`. **Corpus work must NOT
 > touch those.** They're conflict-free. (See the top Session Log entry + the NinjaStar-8 block in ROADMAP.)
 >
-> The build pipeline is **DONE**. Vectorized: `SIGNATURES_DATA/signatures_ext.npy` (N×74) +
-> rebuilt cosine `knn_cosine.pkl`; catalog 459,805×148. Nothing mid-run.
+> The build pipeline is **DONE**. Vectorized: `SIGNATURES_DATA/signatures_ext.npy` (N×88) +
+> rebuilt cosine `knn_cosine.pkl`; catalog 459,805×~201. Nothing mid-run.
 > **Phase 11 #1 (empty-space hunt) is now DONE** — `CODE/27_emptyspace.py` + `_work/emptyspace/`
 > (clusters, full density/frontier, cluster_summary, corners_blends, corners_isolated, REPORT.md,
 > corner_audio in webplayer group `emptyspace_corners`). See the top Session Log entry.
 > **Recommended next task: pick the *beautiful* corners — cross `corners_blends`/`corners_isolated`
 > with taste.** Either (a) proxy "beauty" filters now (high diatonic_ratio + has_melody + low
 > dissonance + moderate sync) to shortlist corners worth generating, or (b) Phase 11 #2 (re-cluster
-> `song_id` with the 74-D sig). Re-run bolder: `python3 CODE/27_emptyspace.py corners --pair-lo .15 --pair-hi .85`.
+> `song_id` with the 88-D sig). Re-run bolder: `python3 CODE/27_emptyspace.py corners --pair-lo .15 --pair-hi .85`.
 > Load vectors per HOW TO USE IT → "Find similar songs". ⚠️ kNN is brute cosine over 460k rows.
 
 > **The goal is to get the corpus EXPERIMENT-READY, which means VECTORIZED:** every song a
@@ -190,7 +192,7 @@ The current pipeline has these known rhythm detection failures, confirmed by ear
 
 **Core pipeline P0–P8 (2026-06-16): COMPLETE — corpus is clean & catalogued.**
 
-- **Catalog:** `catalog/catalog.sqlite` + `catalog/metadata.parquet` — **148 columns** (80 after the 2026-06-16 audit-gap fixes, then +68 rhythm/melody/harmony/seq via the 2026-06-17 merge), **459,805 rows**. Every row has a `song_id` (378,923 distinct) and a `split`. Quality filter cols: `quality_flag`, `bpm_valid`, `duration_suspect`, `time_signature_inferred`.
+- **Catalog:** `catalog/catalog.sqlite` + `catalog/metadata.parquet` — **~201 columns** (current; 80 after the 2026-06-16 audit-gap fixes → 148 with the 2026-06-17 rhythm/melody/harmony merge → ~160 with GrooveDNA → 201 with the 2026-06-20 tempo/meter/key merge), **459,805 rows**. Every row has a `song_id` (378,923 distinct) and a `split`. Quality filter cols: `quality_flag`, `bpm_valid`, `duration_suspect`, `time_signature_inferred`; corrected detection: `bpm_v2`/`felt_bpm`/`ts_final`/`key_v2`/`key_corr`.
 - **Manifest:** `catalog/master_manifest.parquet` — **463,896 rows** (one per unique md5).
 - **Gap of 4,091** (463,896 − 459,805) = files that failed parse / too-few-notes; by design, in `meta_errors.log`, NOT in metadata. Reconciles exactly.
 - **Quarantined:** 90 genuinely-broken files in `_quarantine/` (recorded in manifest, never deleted).
@@ -198,10 +200,10 @@ The current pipeline has these known rhythm detection failures, confirmed by ear
 - **Pools:** gold 239,126 / silver 133,173 / bronze 6,624 + genre/feature pools.
 
 **What's left (the build pipeline is DONE; what remains is USING the space + upkeep):**
-- **Data-quality gaps: ALL 5 DONE 2026-06-16 (see KNOWN GAPS below).** Catalog now 148 columns.
-- **Phase 9 (rhythm-first re-parse): DONE 2026-06-17** — 9.1 audio sanity, 9.R rhythm, 9.2 melody, 9.3/9.4 structure/tempo all folded into the 21→26 pipeline and merged. Signature is vectorized (N×74). Nothing mid-run.
+- **Data-quality gaps: ALL 5 DONE 2026-06-16 (see KNOWN GAPS below).** Catalog now ~201 columns.
+- **Phase 9 (rhythm-first re-parse): DONE 2026-06-17** — 9.1 audio sanity, 9.R rhythm, 9.2 melody, 9.3/9.4 structure/tempo all folded into the 21→26 pipeline and merged. Signature is vectorized (now **N×88**; N×74 at first build). Nothing mid-run.
 - **NEXT (forward roadmap — no scripts yet; see ROADMAP "Phase 11" below):**
-  1. **Empty-space hunt / clustering** (`CODE/27_*`) — the payoff: map dense vs sparse regions of the 74-D space, cluster, drive sampling. THIS is what vectorizing was for.
+  1. **Empty-space hunt / clustering** (`CODE/27_*`) — the payoff: map dense vs sparse regions of the 88-D space, cluster, drive sampling. THIS is what vectorizing was for.
   2. **Re-cluster `song_id` with the richer signature** — `12_signatures.py` dedup used pitch-only (36-D) and over-merges; rhythm+melody now available to tighten it. Deliberate backed-up rebuild.
   3. **Phase 10 maintenance scripts** — `validate_new.sh`, `rebuild_catalog.sh`, `rebuild_pools.sh`, `stats_report.sh`; fold `26_signature_extend.py` into a reproducible rebuild.
   4. **Polish** — validate the rhythm up-weight (currently ×2, a guess) empirically; tune the two "tune-later" harmony reads (smoothing / `key_stability`), re-derivable from `NOTESEQ_DATA` cache.
@@ -227,7 +229,7 @@ The current pipeline has these known rhythm detection failures, confirmed by ear
 | Fact | Value | Implication |
 |---|---|---|
 | Parser in use | **TMIDIX** (`/home/t/datasets/LAMD/CODE/TMIDIX.py`), not pretty_midi/music21 | House parser, ~33 ms/file. Reuse it. |
-| `metadata.parquet` | 459,805 rows × 148 cols | 4,091 files failed parse (in `catalog/meta_errors.log`); NOT in metadata. |
+| `metadata.parquet` | 459,805 rows × ~201 cols | 4,091 files failed parse (in `catalog/meta_errors.log`); NOT in metadata. |
 | Local `META_DATA/*.pickle` | 10 chunks, md5-keyed | Already contain `total_pitches_counts` (pitch sig), `ms_chords_counts` (chord sig), patch/timing/velocity stats for all 459,805. Signatures + chords are a *transform*, not a new parse. |
 | LAMD `SIGNATURES_DATA/LAMDa_SIGNATURES_DATA.pickle` | 404,714 `[md5, signature]` | Joinable to 87% of corpus by md5. Don't recompute. |
 | `master_manifest.parquet` | 463,896 rows: md5, stored_path, size, n_copies, sources, hosts, original_paths | The full file list of record. |
@@ -277,9 +279,9 @@ MIDIs/<2-hex>/<md5>.mid     deduped REAL copies, 256 buckets (md5[:2]) — READ-
 _quarantine/<2-hex>/        90 genuinely-broken files (moved, never deleted)
 META_DATA/                  LAMDa-compatible [md5, data] pickles (data[8]=ms_chords_counts,
                             data[10]=total_pitches_counts -> similarity sig + chords)
-SIGNATURES_DATA/            signatures.npy (N x 36, pitch-only) + signatures_ext.npy (N x 74,
-                            pitch+rhythm+melody+harmony) + signatures_md5.txt + knn_cosine.pkl
-                            (cosine kNN on the 74-D matrix) + timestamped *.bak
+SIGNATURES_DATA/            signatures.npy (N x 36, pitch-only) + signatures_ext.npy (N x 88,
+                            pitch+rhythm+melody+harmony+groove) + signatures_md5.txt + knn_cosine.pkl
+                            (cosine kNN on the 88-D matrix) + timestamped *.bak
 CHORDS_DATA/                chords_summary.parquet (md5-keyed harmony features)
 TOKENIZED/                  {train,val,test}_manifest.tsv (song-level 80/10/10) + split_report.json
 pools/                      *.tsv quality/genre/feature pools (pointers, not copies) + pool_sizes.json
@@ -328,7 +330,7 @@ python3 CODE/04_search.py --out-root . --md5 <md5-in-store> --top 10
 The **vectorized** path (pitch+rhythm+melody+harmony, rhythm-aware) uses the rebuilt kNN:
 ```python
 import numpy as np, pickle
-ext  = np.load("SIGNATURES_DATA/signatures_ext.npy")            # N x 74
+ext  = np.load("SIGNATURES_DATA/signatures_ext.npy")            # N x 88
 md5s = open("SIGNATURES_DATA/signatures_md5.txt").read().split()
 P = pickle.load(open("SIGNATURES_DATA/knn_cosine.pkl","rb"))    # {nn, fit_rows, block_dims, weights, ...}
 row = md5s.index("<some_md5>")
@@ -348,7 +350,7 @@ Re-tune pillar weights anytime: `python3 CODE/26_signature_extend.py --w-rhythm 
 
 **v2 enrichment (resumable; `bash CODE/run_all.sh`):** `_common.py` (helpers, pickle parser, K-S key) · `10_scan.py` (the one TMIDIX parse: integrity + velocity/tempo/drum) · `11_features.py` (key/entropy/instrumentation, pickle-derived) · `12_signatures.py` (N×36 PITCH matrix + initial kNN + near-dup clusters) · `13_chords.py` (harmony) · `14_provenance.py` (composer/genre/era) · `15_catalog.py` (merge → 76-col catalog) · `16_splits_pools.py` (splits+pools) · `17_stats.py` (stats + HF dataset card).
 
-**v3 rhythm-first re-parse & vectorize (2026-06-17):** `18_fill_song_id_and_split.py` + `19_quality_flags.py` (the 5 audit-gap fixes) · `20_audio_sanity.py` (Phase 9.1 render check) · `21_sequences.py` (the unified TMIDIX re-parse → `NOTESEQ_DATA/` note-sequence cache) · `22_rhythm_refine.py` · `24_melody_refine.py` · `25_harmony_refine.py` (the 3 pillar feature tables, read from cache) · `23_catalog_merge.py` (merge pillars → 148-col catalog) · **`26_signature_extend.py` (extend N×36 pitch sig → N×74 `signatures_ext.npy`, rhythm ×2, refit cosine `knn_cosine.pkl`)**.
+**v3 rhythm-first re-parse & vectorize (2026-06-17):** `18_fill_song_id_and_split.py` + `19_quality_flags.py` (the 5 audit-gap fixes) · `20_audio_sanity.py` (Phase 9.1 render check) · `21_sequences.py` (the unified TMIDIX re-parse → `NOTESEQ_DATA/` note-sequence cache) · `22_rhythm_refine.py` · `24_melody_refine.py` · `25_harmony_refine.py` (the 3 pillar feature tables, read from cache) · `23_catalog_merge.py` (merge pillars → catalog) · **`26_signature_extend.py` (extend N×36 pitch sig → `signatures_ext.npy`, now **N×88** incl. groove + corrected tempo/meter, rhythm & groove ×2, refit cosine `knn_cosine.pkl`)** · `27_emptyspace.py` (the empty-space hunt) · `29_groove_dna.py` (GrooveDNA) · `41/43/44_*` (corrected tempo/meter/key + merge).
 
 Logs in `_logs/` (per-phase + `progress.log`). Stats in `_stats/`.
 
@@ -361,7 +363,7 @@ Do these in order: 9.1 → 9.2 → 9.3 → 9.4 → 10.x. Continue the establishe
 parquet ⇄ sqlite agree; one script per phase in `CODE/`, numbered 20+).
 
 - **9.1 Audio sanity render — ✅ DONE 2026-06-16** (`CODE/20_audio_sanity.py` → `_stats/audio_sanity.parquet`, 500 rows + WAVs in `_stats/audio_sanity_wav/`). 500-file deterministic sample (linspace over sorted md5, non-quarantined, ≤3600s). **Result: 0 silent, 0 render errors → corpus renders to real audio.** 17 clipping (`frac_fs>0.10`), 19 length_mismatch (stuck/hanging notes). NOTE: renderer max-normalizes so `peak`≈1.0 is useless — used `rms` (silence) + `frac_fs`=frac samples near full-scale (saturation). Raw metrics saved → re-thresholdable without re-render. WAVs in webplayer group `audio_sanity`.
-- **⚠️ PIVOT 2026-06-17: RHYTHM IS THE TOP PRIORITY** — **✅ FULLY DELIVERED 2026-06-17 15:02 (see CURRENT STATUS + top session-log entry).** The rhythm block now lives in `signatures_ext.npy` (N×74, rhythm up-weighted ×2); this section is kept as the planning record. (User directive — rhythm is THE most important dimension for the model; the old 36-D signature had ZERO rhythm.) 9.2–9.4 folded into ONE unified TMIDIX re-parse of all ~460k files (user chose full re-parse 2026-06-17 — pickles only have aggregates, NOT note sequences, so contour/structure/rhythm-curve need real parsing). Script: `CODE/21_sequences.py`.
+- **⚠️ PIVOT 2026-06-17: RHYTHM IS THE TOP PRIORITY** — **✅ FULLY DELIVERED 2026-06-17 15:02 (see CURRENT STATUS + top session-log entry).** The rhythm block now lives in `signatures_ext.npy` (now N×88, rhythm & groove up-weighted ×2); this section is kept as the planning record. (User directive — rhythm is THE most important dimension for the model; the old 36-D signature had ZERO rhythm.) 9.2–9.4 folded into ONE unified TMIDIX re-parse of all ~460k files (user chose full re-parse 2026-06-17 — pickles only have aggregates, NOT note sequences, so contour/structure/rhythm-curve need real parsing). Script: `CODE/21_sequences.py`.
   - **9.R Rhythm block (NEW, primary deliverable):** IOI distribution (beat units), onset density, grid/quantization tightness, syncopation score, swing ratio, microtiming/groove, pulse clarity (onset-envelope autocorr), polyrhythm hint, duration profile. These become NEW signature dimensions so the empty-space hunt covers TIME-FEEL.
   - **9.2 Melody (secondary, same pass):** `has_melody`, `melody_track_index`, `melody_n_notes`, contour fingerprint.
   - **9.3 Structure (secondary, same pass):** self-similarity → `n_sections`, `has_repetition`.
@@ -370,8 +372,8 @@ parquet ⇄ sqlite agree; one script per phase in `CODE/`, numbered 20+).
 - **10.x Maintenance scripts** — `validate_new.sh`, `rebuild_catalog.sh`, `rebuild_pools.sh`, `stats_report.sh`. **(still pending — see Phase 11 #3.)**
 
 ### Phase 11 — USE the vectorized space (NEW, the work after the finish line; chosen 2026-06-17)
-The corpus is vectorized as of 2026-06-17 15:02 (`signatures_ext.npy` N×74 + cosine kNN). The build pipeline is complete; everything below is about *using* the space and keeping it maintainable. No scripts exist yet. Priority order (recommended start = #1):
-1. **Empty-space hunt / clustering — `CODE/27_*` (the payoff).** Map where the 74-D dots are dense vs sparse, cluster the 460k points, surface "empty-but-coherent corners" (under-represented but musically-plausible regions) to aim generation/sampling at — now spanning TIME-FEEL, not just pitch. This is the literal reason the signature was extended. First real test of whether the ×2 rhythm weight behaves as wanted.
+The corpus is vectorized (`signatures_ext.npy`, now **N×88** + cosine kNN). The build pipeline is complete; everything below is about *using* the space and keeping it maintainable. Priority order (recommended start = #1):
+1. **Empty-space hunt / clustering — `CODE/27_emptyspace.py` (the payoff) — ✅ BUILT & re-run on N×88.** Maps where the 88-D dots are dense vs sparse, clusters the 460k points, surfaces "empty-but-coherent corners" (under-represented but musically-plausible regions) to aim generation/sampling at — spanning TIME-FEEL + groove, not just pitch. Outputs in `_work/emptyspace/`. The ×2 rhythm/groove weight is confirmed to cluster feel. Remaining: cross corners with taste + generate (see `TASKS_NEXT.md`).
 2. **Re-cluster `song_id` with the richer signature.** `12_signatures.py`'s near-dup clustering runs on 36-D pitch only and is documented to over-merge (e.g. simple C-major files collapse). Rhythm+melody now let it distinguish arrangements that pitch alone can't. A deliberate, backed-up rebuild (changes `song_id` groupings → re-verify splits don't leak).
 3. **Phase 10 maintenance** (above) — make catalog→signature→kNN rebuild reproducibly; fold `26_signature_extend.py` into the rebuild flow (it's currently a one-off).
 4. **Polish.** Validate the rhythm up-weight (×2 is a guess — e.g. check against known arrangement clusters); tune the two "tune-later" harmony reads (smoothing / `key_stability`; `harmonic_rhythm` med 2.82, `n_key_areas` med 6.0), re-derivable from `NOTESEQ_DATA` — no re-parse.
@@ -413,7 +415,7 @@ next approved pass.
 8. **No matcher / no GrooveDNA persistence for generated patterns.** The string→MIDI→score loop runs in validation only; archetype vectors aren't saved, and there's no real-MIDI→closest-archetype matcher yet (only a trivial round-trip demo). Both are deferred pending approval.
 9. **Generated MIDIs are gitignored** (`*.mid`), so `rhythmexamples/*.mcp.mid` are LOCAL only — regenerate with `python3 CODE/30_mcp_groove.py generate`. They are flat/quantized reference patterns (no humanization), so `ghost_dynamics`/`swing_cont` read neutral — fine for archetypes, not for "feel" realism.
 
-**Downstream not yet touched (Grok's plan, awaiting go-ahead):** re-run the empty-space hunt on the N×85 space (`python3 CODE/27_emptyspace.py all`); pick NinjaStar Groove anchor md5s per archetype; re-stratify the ~500 rating pool by GrooveDNA cluster; wire the NinjaStar Groove slider to measured GrooveDNA.
+**Downstream (Grok's plan):** ✅ empty-space hunt re-run on the current space (now N×88, 2026-06-20 — `python3 CODE/27_emptyspace.py all`). Still open: pick NinjaStar Groove anchor md5s per archetype; re-stratify the ~500 rating pool by GrooveDNA cluster; wire the NinjaStar Groove slider to measured GrooveDNA. (See `TASKS_NEXT.md`.)
 
 ---
 
@@ -426,6 +428,26 @@ next approved pass.
 - **Verified:** Median `polyevenness=5.32`, `polybalance=0.91`, `h_kick_00=0.84`. Validated NaN-safety and locked 470-col shape.
 
 ## SESSION LOG (append-only, newest first)
+
+### 2026-06-20 (doc sweep) — brought all current-facing docs to N×88 / ~201 cols
+
+Audited every `.md` for stale dims/counts after the N×85→N×88 change (and the earlier
+N×74→85 that never propagated). Fixed the **evergreen/current-facing** docs; left the
+append-only SESSION LOG history and dated "✅ DONE" entries intact (their point-in-time
+N×74/N×85/148-col numbers are correct as history).
+- **MANUAL.md** — rewritten to 88-D / ~201 cols with the correct 5-pillar breakdown
+  (pitch36/rhythm20/melody13/harmony8/groove11, rhythm & groove ×2), corrected-detection
+  columns, empty-space hunt marked done, and a now-false "kNN trained on 100k sample /
+  approximate" caveat removed (it's an exact full-corpus fit). Volatile numbers now point to STATE.md.
+- **STATE.md** — added a current-most CURRENT STATUS block (N×88); fixed the strategic
+  frame, "START HERE" pointer, catalog-column reference (~201), file-map, Python example,
+  script summary, and ROADMAP to 88-D.
+- **HANDOFF_NEXT_WINDOWS.md** (active SQL lane) → N×88 + stale-target note;
+  **HANDOFF_SQL_MIGRATION.md** col count → ~201; **ANNOTATION_AXES_PLAN.md** → 88-D.
+- **Deleted** two self-obsolete handoffs: `HANDOFF_NEXT.md` (its header said "✅ COMPLETE —
+  nothing left") and `PHONE_HANDOFF.md` (Jun-17 "data at risk" alarm, long resolved).
+- Remaining docs: MANUAL, STATE, TASKS_NEXT, HANDOFF_NEXT_WINDOWS, HANDOFF_SQL_MIGRATION,
+  ANNOTATION_AXES_PLAN, ANNOTATOR_SPEC.
 
 ### 2026-06-20 (later still) — re-ran the EMPTY-SPACE HUNT on the new N×88 space
 

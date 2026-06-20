@@ -9,16 +9,17 @@
 ## 1. Context (what the ratings are for)
 
 - **The corpus:** ~460,000 unique MIDI files, deduped and catalogued. Every song already has
-  **74 computed feature dimensions** (pitch, rhythm/swing/syncopation, melody contour, harmony/
-  key/dissonance) and is a point in that 74-D space. Structure is well covered by machines.
+  **88 computed feature dimensions** (pitch, rhythm/swing/syncopation + corrected tempo/meter,
+  melody contour, harmony/key/dissonance, drum groove) and is a point in that 88-D space.
+  Structure is well covered by machines.
 - **The goal:** north-star is "invent a new form of music." Near-term concrete task: an
-  "empty-space hunt" has mapped dense vs. sparse regions of the 74-D space; the next step is to
+  "empty-space hunt" has mapped dense vs. sparse regions of the 88-D space; the next step is to
   **find the *good* empty corners** — musically appealing but under-represented regions — to aim
   generation at. That requires a **taste/quality signal the computed features don't have.**
 - **The tool ("NinjaStar-8"):** a phone web app. One person (the corpus owner) listens to a song
   and moves sliders. Ratings are stored **md5-keyed**, left-merged onto the catalog like any other
   feature table (un-rated songs = NaN). Intent: rate a subset (target ~500), then **train a small
-  model to predict the ratings from the 74-D features and propagate taste across all 460k.**
+  model to predict the ratings from the 88-D features and propagate taste across all 460k.**
 - **Current state:** 8 ad-hoc axes (groove, slaps, energy, peace→kill, lobrow→hibrow, simple→fancy,
   left→right, normie→weird), **0–8 sliders, 4 = neutral**, ~45 songs rated so far, **single rater**.
 - **Problem prompting this review:** some axes are hard to rate consistently (left/right, fancy vs
@@ -100,7 +101,7 @@ song scored); duels = accuracy (trustworthy ordering on the axes that matter mos
   noisy even from a consistent rater.
 - **Pool (related, separate issue):** the current 109-song pool is a QA-defect-biased sample (74
   "clean" + 35 flagged for audio glitches), in fixed md5-hash order. Swap it for a **randomized
-  ~500-song stratified sample** of clean songs spread across the 74-D space, so the trained model
+  ~500-song stratified sample** of clean songs spread across the 88-D space, so the trained model
   generalizes instead of overfitting weird files.
 
 ---
@@ -134,7 +135,7 @@ song scored); duels = accuracy (trustworthy ordering on the axes that matter mos
 4. **Keep absolute 0–8, or go pure ordinal?** (0–8 with 4=neutral, bipolar diverging meter.)
 5. **Anything from GEMS / music-preference models we're leaving on the table** that would matter for
    a *generation-steering* taste model (vs. a recommendation/therapy model)?
-6. **Pool design:** is ~500 stratified across the 74-D space the right sampling, or should it be
+6. **Pool design:** is ~500 stratified across the 88-D space the right sampling, or should it be
    stratified by genre, by cluster, or weighted toward the "empty corners" we ultimately care about?
 
 ---

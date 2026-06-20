@@ -73,9 +73,12 @@ State from STATE.md CURRENT STATUS:
   ```
 - **Taste propagator** (`CODE/37_taste_stub.py`) has r=0.318 with 128 ratings.
   More NinjaStar ratings → better predictions.
-- **Generation targets** already in `_work/generation_seeds/top5_targets.csv`.
-  Next step: generate MIDI from them via SkyTNT, check against music_rules.
-- **Signature is N×85** (`signatures_ext.npy`). Nothing needs rebuilding.
+- **Generation targets:** the old `_work/generation_seeds/top5_targets.csv` is STALE
+  (computed on N×85). The signature is now **N×88** and the empty-space hunt was re-run
+  (2026-06-20) — regenerate taste-ranked targets first. See `TASKS_NEXT.md` Task 1.
+  Then generate MIDI via SkyTNT / route-C recombination, check against music_rules (Task 2).
+- **Signature is N×88** (`signatures_ext.npy`; pitch36/rhythm20/melody13/harmony8/groove11).
+  Nothing needs rebuilding.
 
 **NinjaStar annotator:** live at `https://lab.tail0b3418.ts.net/` — keep rating.
 
