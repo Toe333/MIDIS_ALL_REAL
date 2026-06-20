@@ -80,6 +80,71 @@
 
 ---
 
+## MODEL IMPROVEMENT NOTES (append-only — findings from listening sessions)
+
+### 2026-06-19 — Ear-vs-DB calibration, song `5672a901` (high_entropy_drums batch)
+
+**Song:** `5672a90158cffc067ebc828e6ac79cfe` · F major · 150 BPM · 2 min · 5 tracks · 5,778 notes
+
+**Drum pattern (confirmed by ear + MIDI grid dump):**
+- Archetype name: `blast_beat_non_drummer_variant_01`
+- 16th-note grid (1 bar, repeats locked for entire song):
+  `(KS)(HK)(KS)(HK)(KS)(HK)(KS)(HK)(KS)(HK)(KS)(HK)(KS)(HK)(KS)(HK)`
+- K=kick (BD, pitch 36) on every 16th. S=snare (SD, pitch 38) on odd 16ths. H=closed hat (CHH, pitch 42) on even 16ths.
+- Real drummer blast beat is usually `(RK)(S)(RK)(S)...` (ride+kick / snare alternating 8ths) or `(HK)(S)(HK)(S)...` with single kick. This MIDI variant puts kick on EVERY 16th with hat filling the gaps — a programmed approximation, not idiomatic drumming.
+
+**Bassline (confirmed by ear):**
+- 1-bar repeating: `F F F F F F F F B B B B C C C C` (16th-note resolution)
+- Pitches: F4 (8×) → B3 (4×) → C4 (4×) = root → tritone-down → 5th. Repeats every bar.
+- Harmonic motion: I → ♭V (tritone sub) → V — dark/heavy progression typical of metal contexts.
+
+**What this reveals about model accuracy:**
+1. **`drum_pattern_entropy` = 0.9999 is WRONG as a complexity measure for blast beats.**
+   All 16 kick slots filled → every slot occupied → Shannon entropy = max. But this is the *most regular* pattern possible. Entropy measures slot occupancy, not pattern complexity. Fix needed: add `bar_to_bar_variance` (how much does the pattern change bar-to-bar?). Blast beat = 0.0 variance. Random/complex = high variance. Use variance, not entropy, to find genuinely complex patterns.
+2. **`drum_snare_backbeat = 0.25` correctly flags non-standard snare placement** — the snare is on every odd 16th, not on beats 2 & 4. This field is working.
+3. **`drum_kick_density = 15.6 kicks/bar` is a real signal** — when this is >12, flag as `blast_beat_candidate`. At normal tempos (120–160 BPM) this physically means a kick on every 16th note. Combine with `drum_pattern_entropy > 0.95` AND `bar_to_bar_variance ≈ 0` to detect this archetype cleanly.
+4. **Key detection: DB said F major, ear confirmed F major ✓.** No error here.
+5. **BPM: DB says 150, felt as 75 (double-time feel).** Not a data error — the MIDI is notated at 150. The double-time feel is a perceptual consequence of the kick-on-every-16th pattern. Do NOT store a corrected BPM; use as-is. A future `double_time_feel` flag (when `kick_density > 12/bar`) is optional but not urgent.
+
+### 2026-06-19 — `ab83f1dd` is 7/8 + 11/8 mixed meter (Gypsy/Greek folk)
+
+**Song:** `ab83f1ddeb3969f0f54634ef74e7880a` · E major · 120 BPM
+**What the DB says:** `time_signature = 4/4` (inferred/filled), `drum_pattern_entropy ≈ 1.0`
+**What it actually is:** Bar 1 in **7/8**, then the rest of the song in **11/8**. Accordion + Ocarina + Piano + Bass + Tambourine (p54 every 16th) + irregular hand percussion. Gypsy or Greek folk music. Completely undetected by the current pipeline.
+
+**⭐ #1 PRIORITY: Better rhythm/meter detection before more vectorization.**
+
+> "What's the point of vectors if all the data is wrong?"
+
+The current pipeline has these known rhythm detection failures, confirmed by ear:
+
+| Failure | Example | Impact |
+|---|---|---|
+| BPM detector latches on subdivisions | songs detected at 37/47 BPM, actually 120–150 | BPM col unreliable for ~10–20% of corpus |
+| `time_signature` filled as 4/4 for everything odd | `ab83f1dd` is 7/8+11/8 | All odd-meter songs miscategorized |
+| `drum_pattern_entropy` measures slot occupancy, not complexity | blast beat scores max entropy; locked tambourine pulse scores max entropy | Entropy useless as a complexity discriminator |
+| Key detector confused by dense percussion | blast beat song detected as F major (actually correct here, but fails on others) | Key accuracy unknown at scale |
+| No odd-meter detection at all | 7/8, 11/8, 5/4, 6/8 all stored as 4/4 | Entire folk/world/prog subset is mislabeled |
+
+> **✅ LARGELY ADDRESSED 2026-06-20** — see the top Session Log entry ("DETECTION-ACCURACY PASS"). BPM (the `tempos[0]` bug, 13.5% of corpus), real-meter recovery (hybrid `ts_final`), `felt_tempo` half/double, and key-confidence (`key_corr`) are all fixed in `_work/tempo_meter_v2.parquet` + `_work/key_v2.parquet`, ear-validated (BPM 60→80%, KEY 100%, TS 100%). Remaining: merge into catalog + re-derive per-bar drum metrics on clean bars + (optional) onset-based meter *inference* for the ~33k junk-`1/4`/missing-meter files. The list below is kept as the planning record.
+
+**What needs to be built (Linux, future session, HIGH PRIORITY):**
+1. **Real time-signature detector** — onset-based meter detection (e.g. autocorrelation of onset strength at 6/8/7/8/11/8 periods). At minimum: flag songs where 4/4 assumption produces poor grid fit as `meter_uncertain=1`.
+2. **BPM confidence + multi-hypothesis** — store top-2 BPM candidates + ratio; flag when detected BPM < 60 (almost always a subdivision error).
+3. **`bar_to_bar_drum_variance`** — replaces entropy as complexity measure. Blast beat = 0. Genuinely varying = high.
+4. **`blast_beat_candidate`** flag: `kick_density > 12 AND snare_backbeat < 0.35 AND drum_entropy > 0.90`.
+5. **Percussion-vs-drum-kit classifier** — tambourine/conga/cabasa patterns (GM pitches 54–81) should be treated differently from kick/snare/hat patterns. Currently all mixed together.
+
+**Until these are fixed, rhythm-based SQL queries and DrumDNA clustering have limited reliability. Fix data before extending vectors.**
+
+**Action items for pipeline (Linux, future session):**
+- Add `bar_to_bar_drum_variance` to DrumDNA / catalog — replaces entropy as the "complexity" discriminator.
+- Add `blast_beat_candidate` binary flag: `kick_density > 12 AND snare_backbeat < 0.35 AND drum_pattern_entropy > 0.90`.
+- When delivering MIDI examples, include key + BPM + md5 prefix in filename (already done in `40_sql_explore.py`).
+- Use MIDI delivery (not WAV bounce) for ear-check sessions — faster, smaller, playable at any tempo in a DAW.
+
+---
+
 ## CURRENT STATUS (always reflects the latest session)
 
 **As of 2026-06-18 (evening) — FIRST taste→pool→propagate loop closed (under Grok supervision via the Playwright bridge).** Live NinjaStar pool swapped to a 500-song **rhythm-heavy stratified set** (`_work/pool_v2.parquet`, now `pool_current.txt`; 73% drum-bearing, all 88 eligible empty-corner songs force-included, balanced over groove deciles) and the systemd service restarted on its pinned port 8780 — phone queue is now the new set, all 283 ratings preserved (md5-keyed). A **taste-propagator STUB** (`CODE/37_taste_stub.py`, Ridge on the 85-D signature → user groove rating, GrooveDNA block ×5) was trained on the 128 v2 groove ratings and predicted over all 459,805 → `_work/taste_pred.parquet`; 5-fold CV **pearson r=+0.318, MAE=2.00** (weak but real — needs more groove truth). Pool builders: `CODE/36_pool_preview.py` (the live v2) and `CODE/38_pool_sampler_v2.py` (Grok-spec 512-row rhythm-weighted, staged not deployed). **Generation seeds RESOLVED = option B (top-5 empty-corner targets):** `b56df652, 622f340d, f96decc4, 41277f13, cf698cb6` (pred groove-taste 6.73–7.08) → `_work/generation_seeds/top5_targets.csv`, and rendered to audio (`_work/seed_audio/*.wav`, in webplayer group `empty-corner-targets`) so they can be auditioned. Signature still N×85. (Prior: 2026-06-18 ~15:30 GrooveDNA+MCP+NinjaStar-v2; 2026-06-17 finish line N×74.) **Strategic frame below still holds: coordinates over labels; hunt empty space and LISTEN.**
@@ -357,6 +422,23 @@ next approved pass.
 - **Verified:** Median `polyevenness=5.32`, `polybalance=0.91`, `h_kick_00=0.84`. Validated NaN-safety and locked 470-col shape.
 
 ## SESSION LOG (append-only, newest first)
+
+### 2026-06-20 — DETECTION-ACCURACY PASS: BPM/meter/key re-derived, ear-validated (the #1-priority "fix the data" work)
+
+Addressed the long-standing rhythm/meter detection failures (see MODEL IMPROVEMENT NOTES). All work is **additive & re-derivable** (new `_work/*_v2.parquet`, catalog NOT yet touched — merge is the next step). Validated with a human ear-check loop (5 songs in LMMS/MuseScore).
+
+- **Root causes found (by reading the actual code + raw MIDIs):**
+  1. **BPM:** `CODE/10_scan.py:68` did `bpm = tempos[0]` — took the FIRST tempo event. Wrong when (a) several tempo events share tick 0 (last wins in playback — e.g. song `a81f2897` had `[6.21, 129.0]` both at tick 0 → stored 6.2, real = 129) or (b) tempo ramps. **62,087 files (13.5%) had wrong BPM; 41,597 wrong by >5.**
+  2. **Time signature:** real source meters were flattened to 4/4. **~50k files have genuine 3/4, 6/8, 2/4, 12/8** that were stored as 4/4; another ~33k have junk `1/4`/`1/8` notation (makes per-bar metrics explode — e.g. song `4d870545` read `211 kicks/bar`, a FALSE blast-beat, purely an artifact of `1/4` bars).
+  3. **Key:** detector was fine; its **confidence metric was the bug** — `confidence = best_corr − 2nd_best_corr` (gap to runner-up), always tiny because every key's relative scores almost identically → 100% of corpus read <0.5 "confidence". The *value* was right; the *number* lied.
+- **Built (all read raw MIDI / NOTESEQ cache, ~min-scale, parallel):**
+  - **`CODE/41_redetect_tempo_meter.py`** (symusic, fast) → `_work/tempo_meter_v2.parquet`: `bpm_v2` (active-time-weighted dominant tempo, last-at-tick wins), `bpm_first/min/max`, `n_tempo_events`, `ts_v2` (file meter), plus post-added **`ts_final`** (hybrid: trust file meter when real {den∈2/4/8/16, 2≤num≤15}, else 4/4 + **`ts_inferred`** flag → **387,070 real meters kept, 72,735 defaulted+flagged**) and **`felt_bpm`/`felt_tempo_adjusted`** (halve when notated >180 bpm → **30,077 files**; e.g. song2 220→110, song3 55 untouched).
+  - **`CODE/43_redetect_key.py`** → `_work/key_v2.parquet`: duration-weighted PC histogram (drums excluded) + K-S; **`key_corr` (0-1 = real confidence, median 0.86, 92%>0.7)**, `key_margin`, `key_alt`, `tonal_strength`. `key_v2`==old key 81.6%, mode 89.3%. `--benchmark` vs **music21** (40 files): mode 77.5%, tonic 52.5%, exact 45% — disagreements are the *inherently ambiguous* fifth/relative cases (both tools + the human ear hit them).
+  - **`CODE/42_detect_eval.py`** + `_work/ground_truth.json` (5 ear-confirmed songs): scores old-vs-v2 vs human labels. BPM scoring is octave-aware.
+- **Ear-truth (5 songs, in `ground_truth.json`):** `a81f2897`=F major/129 (was 6.2!); `74817825`=feels 110 (notated 220)/4-4/Fmin; `4d870545`=E min/55/**NOT a blast beat** (211 was a `1/4`-meter artifact); `00230504`=D major/100/beat `khhkkhsh`; `cea25298`=E minor/120 (user first heard G major then corrected to its relative E minor — same ambiguity the algo has).
+- **SCORECARD (5 confirmed): BPM 60%→80%** (the one v2 "miss" is song2, where 220 is the correct file read — `felt_bpm`=110 captures the perceptual tempo). **KEY 100%→100%** (value was always right; confidence 0.13→0.86). **TS 100%→100%** with `ts_final` (old "100%" was fake — it blind-fills 4/4; v2 preserves real meters corpus-wide).
+- **Honest correction:** initially flagged a key "fifth-error" (song4) and "relative-minor miss" (song5) → both turned out to be MY mislabel + the human's own ear ambiguity. The key detector got all 3 confirmed keys right. **A bass/final-note tonic hint is NOT warranted by current evidence** (revisit only if a bigger labeled set shows real dominant/relative misses).
+- **NEXT (Linux):** (1) **merge** `bpm_v2`/`felt_bpm`/`ts_final`+`ts_inferred`/`key_v2`+`key_corr` into `metadata.parquet`+`catalog.sqlite` **additively** (originals kept, checkpoint first); (2) **re-derive per-bar drum metrics** (`kick_density` etc.) on the corrected bars (kills the `211/bar` class); (3) optionally expand `ground_truth.json` to ~20-30 songs for statistically-solid accuracy. Scripts committed; `_work/*` parquets are gitignored (regenerate via the three scripts).
 
 ### 2026-06-19 — SQL Server LocalDB live; catalog fully migrated to dbo.metadata
 
