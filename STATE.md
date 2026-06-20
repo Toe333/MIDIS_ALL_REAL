@@ -23,7 +23,9 @@
 > kNN/clustering. **DONE & integrated 2026-06-18:** computed over all 462,621 cached
 > files (311,585 have a real drum kit), merged onto the catalog (now 160 parquet / 159
 > sqlite cols), and added to the signature as its own **×2-weighted pillar** via
-> `26_signature_extend.py` → **`signatures_ext.npy` is now N×85** (was 74) with kNN
+> `26_signature_extend.py` → **`signatures_ext.npy` is now N×88** (was 85→74; the +3
+> over 85 are the 2026-06-20 corrected tempo/meter dims `felt_bpm`/`ts_num`/`ts_compound`
+> added to the rhythm pillar — see top Session Log) with kNN
 > refit; neighbor groove-block spread is 6× tighter than global (0.071 vs 0.426), i.e.
 > feel now clusters. It is the quantitative backbone of the **NinjaStar "Groove" axis**
 > (by-ear ratings ↔ measured GrooveDNA) and a new lens for the **empty-space hunt**
@@ -424,6 +426,18 @@ next approved pass.
 - **Verified:** Median `polyevenness=5.32`, `polybalance=0.91`, `h_kick_00=0.84`. Validated NaN-safety and locked 470-col shape.
 
 ## SESSION LOG (append-only, newest first)
+
+### 2026-06-20 (later) — refreshed signature/kNN RHYTHM block with corrected tempo/meter (no regression)
+
+Folded the just-merged ear-validated detection columns into the rhythm pillar so the kNN finally clusters on **meter** and **perceptual tempo**, not just beat-relative feel. **`signatures_ext.npy` is now N×88** (was 85); rhythm block 17→20 dims.
+
+- **What changed (`CODE/26_signature_extend.py`):** added **`felt_bpm`** (the half/double-normalized perceptual tempo from `44_merge_detection`, log1p-tamed; inf/NaN imputed) + two derived meter dims from **`ts_final`**: `ts_num` (numerator) and `ts_compound` (1.0 for 6/8·9/8·12/8). Chose numeric meter over a 12-way one-hot because 4/4 is ~86% of the corpus (sparse dummies would be dead weight). Used `felt_bpm` not raw `bpm`/`bpm_v2` so "60 vs 120 that feel the same" cluster together. Weights unchanged (rhythm ×2). Rebuild + cosine refit = 7s.
+- **Backups:** `signatures_ext_20260620_073159.npy.bak` + the script's `knn_cosine.pkl.prerefit_20260620_073214.bak`.
+- **Regression probe — `CODE/45_rhythm_knn_probe.py`** (new, keep): per-seed + aggregate 11-NN homogeneity, run on the OLD artifacts (from backups) vs NEW. **Aggregate over random 3000 + 800×3/4 + 500×6/8:**
+  - meter_match (neighbor shares seed's `ts_final`): all **0.803→0.893**, 3/4 **0.223→0.326**, 6/8 **0.180→0.913** (the `ts_compound` flag pulling compound meters together — biggest win).
+  - felt_bpm neighbor MAD **18.0→11.0 bpm** (tempo now clusters).
+  - **No regression on the existing feel axes:** swing_bur neighbor std 0.048→0.050, syncopation 0.066→0.068 (both +0.002 = noise from the block growing 17→20 dims). Per-seed swing/triplet/dotted neighborhoods stayed tight or tightened.
+- Probe outputs: `_work/rhythm_knn_probe_{baseline,new}.json`. Env: Linux **`.venv-linux`** uv venv (repo `.venv` is the Windows one from the SQL sessions — unusable on Linux). Downstream consumers reading `signatures_ext.npy`/`knn_cosine.pkl` automatically pick up the wider matrix; `block_dims` in the pickle now reports rhythm=20.
 
 ### 2026-06-20 — DETECTION-ACCURACY PASS: BPM/meter/key re-derived, ear-validated (the #1-priority "fix the data" work)
 

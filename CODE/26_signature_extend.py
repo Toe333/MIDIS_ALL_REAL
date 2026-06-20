@@ -64,7 +64,12 @@ PILLARS = {
         "tempo_change_count", "n_tempo_changes", "tempo_stability", "tempo_cv",
         "swing_bur", "swing_confidence", "swing_n_beats",
         "mel_rhythm_straight", "mel_rhythm_dotted", "mel_rhythm_triplet",
-        # tempo_class one-hot dummies appended at runtime
+        # CORRECTED tempo (44_merge_detection / 41_redetect): felt_bpm is the
+        # ear-validated, half/double-normalized perceptual tempo. inf/NaN are
+        # imputed by scale_block; log1p tames the heavy tail. (Prefer felt_bpm
+        # over raw bpm/bpm_v2 so 60 vs 120 'felt the same' cluster together.)
+        "felt_bpm",
+        # tempo_class one-hot + meter (ts_num, ts_compound from ts_final) appended at runtime
     ],
     "melody": [
         "mel_pitch_mean", "mel_range", "mel_pc_entropy",
@@ -89,7 +94,31 @@ PILLARS = {
     ],
 }
 ONEHOT = {"tempo_class": ["constant", "gradual", "erratic", "rubato"]}
+# CORRECTED meter (44_merge_detection): ts_final is the hybrid ear-validated time
+# signature ("n/d"). Encoded as two numeric rhythm dims rather than a sparse one-hot
+# (4/4 is ~86% of the corpus) so odd/compound meters separate without 12 dead dummies.
+METER_SRC = "ts_final"
 DROP = ["most_common_chord"]
+
+
+def derive_meter(s):
+    """ts_final 'n/d' -> (ts_num, ts_compound). num = beats-per-bar numerator;
+    compound = 1.0 for x/8 meters that group in threes (6/8, 9/8, 12/8). NaN when
+    unparseable (imputed downstream)."""
+    num = np.full(len(s), np.nan)
+    comp = np.full(len(s), np.nan)
+    vals = s.astype("object").to_numpy()
+    for i, v in enumerate(vals):
+        if not isinstance(v, str) or "/" not in v:
+            continue
+        a, _, b = v.partition("/")
+        try:
+            n, d = int(a), int(b)
+        except ValueError:
+            continue
+        num[i] = float(n)
+        comp[i] = 1.0 if (d == 8 and n in (6, 9, 12)) else 0.0
+    return num, comp
 
 
 def log(msg):
@@ -168,7 +197,7 @@ def main():
             log(f"WARN pillar '{pillar}': {len(miss)} cols not in catalog, dropping: {miss}")
             PILLARS[pillar] = [c for c in cols if c in avail]
     PILLARS_ACTIVE = [p for p in ("rhythm", "melody", "harmony", "groove") if PILLARS.get(p)]
-    use_cols = ["md5"] + sum(PILLARS.values(), []) + list(ONEHOT) + DROP
+    use_cols = ["md5"] + sum(PILLARS.values(), []) + list(ONEHOT) + [METER_SRC] + DROP
     m = pd.read_parquet(META, columns=[c for c in use_cols if c in avail or c == "md5"])
     if m["md5"].duplicated().any():
         sys.exit("FATAL: duplicate md5 in catalog — cannot align")
@@ -186,6 +215,16 @@ def main():
             name = f"{col}__{cat}"
             m[name] = (s == cat).astype(float)
             blocks["rhythm"].append(name)
+    # corrected meter -> two numeric rhythm dims (ts_num, ts_compound)
+    if METER_SRC in m.columns:
+        num, comp = derive_meter(m[METER_SRC])
+        m["ts_num"] = num
+        m["ts_compound"] = comp
+        blocks["rhythm"] += ["ts_num", "ts_compound"]
+        log(f"meter from {METER_SRC}: ts_num/ts_compound derived "
+            f"(parsed {int(np.isfinite(num).sum())}/{len(num)})")
+    else:
+        log(f"WARN meter source {METER_SRC} absent — skipping ts_num/ts_compound")
 
     # ---- scale each non-pitch pillar, then L2 + weight -------------------
     report = {"weights": weights, "log_max": LOG_MAX, "clip": CLIP,
