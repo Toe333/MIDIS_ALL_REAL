@@ -429,6 +429,34 @@ next approved pass.
 
 ## SESSION LOG (append-only, newest first)
 
+### 2026-06-20 (TASKS_NEXT Task 1) — re-ranked empty corners by predicted taste on N×88
+
+Rebuilt the taste propagator + corner targeting on the current N×88 space (the old
+`taste_pred.parquet`/`top5_targets.csv` were 85-D-era and stale after the N×88 corner
+shift). New script **`CODE/46_taste_rerank.py`** (descends from `37_taste_stub.py`).
+
+- **Key data finding:** of the 7 NinjaStar-8 axes, the v2 rater only ever moved
+  **musicality, novelty, groove** — `valence/energy/memorability/spark` are all stuck at
+  the default **4** (std=0). So the spec's `love = mean(musicality, memorability, spark)` is
+  **degenerate** (2 of 3 constant) → trained the 3 real axes only.
+- **Model:** Ridge `alpha=100`, groove block (dims 77–87) ×5, **v2 ratings only** (mixing the
+  155 v1 legacy 3-axis ratings *hurt* CV). 5-fold CV (n=128): **groove pearson r=+0.392**
+  (beats old stub's 0.32), MAE 1.91 — *the only predictable axis*; musicality r≈−0.06,
+  novelty r≈+0.05 (≈noise). Takeaway: the 88-D signature encodes rhythm/feel, not subjective
+  gestalt — **rank by groove** (also the project's #1 priority).
+- **Outputs:** predictions over all 459,805 → `_work/taste_pred_v2.parquet`
+  (`pred_groove`/`pred_musicality`/`pred_novelty`). Scored all 120 corners (60 blend via
+  `nearest_songs`, 60 isolated via `reps`); corner score = mean predicted-groove of its top-3
+  nearest real songs, tie-broken by proxy-beauty (diatonic≥0.6 & has_melody) then coherence.
+  → **`_work/generation_seeds/targets_v2_20260620.csv`** (120 ranked; supersedes
+  `top5_targets.csv`, kept as `.bak`).
+- **Top-8 nearest songs validated** all diatonic 0.81–0.99, melodic, syncopated 0.46–0.67 —
+  triplet-feel/dotted groovy corners. Rendered to WAV
+  (`_work/generation_seeds/targets_v2_audio/`) + loaded into **webplayer group `targets_v2`**
+  (REVERSE order, rank #1 newest) — http://0.0.0.0:8765/.
+- Did NOT touch `signatures_ext.npy` / `knn_cosine.pkl`. **Next:** Task 2 (generator) can
+  pull its target corner from `targets_v2_20260620.csv`.
+
 ### 2026-06-20 (doc sweep) — brought all current-facing docs to N×88 / ~201 cols
 
 Audited every `.md` for stale dims/counts after the N×85→N×88 change (and the earlier
