@@ -429,6 +429,43 @@ next approved pass.
 
 ## SESSION LOG (append-only, newest first)
 
+### 2026-06-22 (TASKS_NEXT Task 2) — signature-of-one-MIDI + route-C generator (north-star step)
+
+Built the two pieces Task 2 needs: embed ANY single .mid into the live N×88 space, then
+GENERATE into an empty corner by recombining its neighbours and scoring with that embedder.
+
+- **`CODE/49_sig_one.py` (the prerequisite, DONE & verified).** 26_signature_extend bakes its
+  per-column scaler (log1p flags, median/μ/σ, block L2, weights) into the matrix but never
+  saves it — so I re-derive that scaler from the catalog (cached `_work/sig_scaler.pkl`) and
+  reuse the per-file feature functions from 12/21/22/24/25/29 to embed a fresh file.
+  Subtleties solved to hit fidelity: pitch chord-size bins + the legacy chord-count harmony
+  cols (`n_distinct_chords`/`n_unique_chords`/`chord_density`/`has_extended_harmony`) are
+  reconstructed EXACTLY via TMIDIX's millisecond score (`opus2score(to_millisecs(opus))`,
+  the same path 03_make_metadata used); `tempo_stability`=std(tempo BPMs) (10_scan);
+  `felt_bpm`=tick-weighted dominant BPM (41's bpm_v2 rule); meter sanitised to `ts_final`'s
+  rule (keep num∈[2,12] & denom∈{2,4,8}, else 4/4 — collapses junk 1/4, 16/16, 132/4 …).
+  **Verify:** catalog-path reproduces stored rows at cosine **1.0000** (scaler exact);
+  from-MIDI path **median 1.0000, mean 0.993** over 120 random songs (pitch/melody/harmony/
+  groove blocks all ≈1.0; residual tail driven by the un-replayed v2 felt-tempo half/double
+  adjuster, ~6.5% of corpus). CLI: `build-scaler` / `verify [md5…]` / `vec file.mid`.
+- **`CODE/50_generate.py` (route C: retrieve-and-recombine, DONE & auditioned).** Picks an
+  empty BLEND corner from `targets_v2_20260620.csv` (default top groove-ranked: *135bpm
+  triplet-feel · ext-harm*; target = normalised midpoint of the two anchor centroids), splits
+  each of the 3 nearest donors into stems by role (drums chan9 / melody = 24's pick / harmony =
+  rest, rescaled to tpb 480), and rebuilds every {drums A, melody B, harmony C} triple at the
+  corner's felt BPM. Each candidate is embedded with 49 and scored by cosine-to-corner; beauty
+  gate = diatonic≥0.6 & has_melody. **Result:** 6/27 candidates beat the best real donor
+  (0.8246 > 0.8172), top diatonic 0.84 — rendered & loaded into webplayer group
+  `generated_135bpm_constant_trip` (http://0.0.0.0:8765/) for the ear test. **Honest finding:**
+  gains are marginal because (a) the corner is empty *by construction* (between dense anchors,
+  so neighbour-recombination can't fully reach it) and (b) 2 of the 3 donors are near-duplicate
+  arrangements (identical stem sizes) → low recombination diversity. **Next:** the STRETCH lane
+  — steer generation toward the target signature with the sibling theory engine (music_rules /
+  SkyTNT + rejection sampling, see [[music-rules-project-link]]) to actually push INTO empty
+  space rather than hover at its rim; and de-dup donor selection.
+- Env: installed `tqdm`, `matplotlib` (TMIDIX deps) and `mido` into `.venv-linux`.
+  Did NOT touch `signatures_ext.npy` / `knn_cosine.pkl`.
+
 ### 2026-06-20 (TASKS_NEXT Task 1) — re-ranked empty corners by predicted taste on N×88
 
 Rebuilt the taste propagator + corner targeting on the current N×88 space (the old
