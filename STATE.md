@@ -429,6 +429,38 @@ next approved pass.
 
 ## SESSION LOG (append-only, newest first)
 
+### 2026-06-22 (Task 1 upgrade) — canonical taste propagator (47) + embedded the new MIDI drop
+
+**Canonical propagator `CODE/47_propagator.py`** (supersedes 46_taste_rerank / 37_taste_stub).
+Per-axis it picks the better of {LightGBM, groove-upweighted Ridge} by 5-fold CV, predicts all
+459,805, and writes the **canonical `_work/taste_pred_v2.parquet`** (md5 + 7 pred axes +
+`pred_love` + `unc_love` + provenance cols `script_sha`/`built_at`/`version`/`model_per_axis`/
+`n_train`; old one auto-.bak'd). md5-joinable to the catalog like GrooveDNA.
+- **Key data finding (corrects an in-session overstatement):** on the **v2-only** training set
+  (rating_version==2, n=131) only **musicality/novelty/groove** carry signal — valence/energy/
+  memorability/spark are still **constant** (the rater moves the core 3 + radar). The variance
+  those 4 show in the full parquet is from the **155 v1 legacy** rows on the old 8-axis schema;
+  mixing them in *hurt* CV (groove 0.29→ worse), so training is v2-only (matches the 0620 note).
+- **Groove model tuned empirically:** swept groove-block upweight ∈{1,3,5,8,12} × Ridge alpha
+  ∈{30,100,300} over 3 CV seeds → **up=3 / alpha=300 wins (groove r=+0.364)**; the requested
+  ×8 was consistently *worse* (~0.32–0.35), so we use the optimum. `pred_love` stays
+  groove-DOMINANT (groove ×8 vs musicality/spark ×1) — and since only groove varies, love ≈
+  groove by construction, which is the #1 priority anyway.
+- **Outputs:** canonical parquet (sha in provenance) + **`_work/generation_seeds/targets_taste_v2_20260622.csv`**
+  (120 corners ranked by pred_love, beauty-gated diatonic≥0.6 & has_melody → 118 pass). Top
+  corners are triplet-feel / dotted / ext-harm (same family the 0620 run surfaced). Top-8
+  nearest rendered to **webplayer group `targets_v2`** (reverse, #1 newest). `unc_love`
+  (10-bag LightGBM spread over groove/musicality/spark) is ready for Task 4's active sampler.
+- **NEW MIDI DROP embedded** with 49_sig_one (the user added `MIDIS_TO_BE_INJESTED/`,
+  `SHEETMUSIC_MXL_PDF/`, `SHUTTLE/`). Most famous pieces (Coltrane, Monk, Death, Megadeth, Pink
+  Floyd, 8-bit) come back at **cos≈1.0 → already duplicated in the corpus**. The groove-novel
+  outliers in *sparse* space: **`minor-trouble-max-roach` (0.72, most novel)**, the user's own
+  `THISONE`/`asdf` (0.81), **Fela `water-no-get-enemy` (0.83)**, and the **gypsy 11/8–11/16 drum
+  patterns (0.83–0.87)**. Every odd-meter gypsy pattern maps nearest to a **4/4** corpus song —
+  direct confirmation that **odd-meter groove is genuine empty space** (matches the known meter
+  gap). These are the strongest taste-anchor / generation-seed candidates in the drop; ingest +
+  re-vectorize deferred. Did NOT touch signatures/kNN. Installed lightgbm.
+
 ### 2026-06-22 (TASKS_NEXT Task 2) — signature-of-one-MIDI + route-C generator (north-star step)
 
 Built the two pieces Task 2 needs: embed ANY single .mid into the live N×88 space, then
