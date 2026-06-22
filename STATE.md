@@ -429,6 +429,21 @@ next approved pass.
 
 ## SESSION LOG (append-only, newest first)
 
+### 2026-06-22 (TASKS_NEXT Task 4) — active-learning pool LIVE on NinjaStar-8
+
+**`CODE/48_active_pool.py`** picks the next 200 songs to rate by acquisition =
+0.5·(taste-model uncertainty `unc_love` from 47) + 0.5·(empty-corner proximity = max cosine to
+the 120 corner targets), balanced across predicted-groove deciles. Composition: **8 force-included
+top-8 corner targets + 60 empty (highest corner proximity) + 112 uncertain (groove-decile
+balanced) + 20 repeats** (already-rated high-groove songs re-queued for self-consistency).
+pred_groove span 3.09–5.53 (median 4.59 — groove-biased, by design). Written to
+`_work/pool_active.parquet` in the live schema (pool_id/md5/source/is_repeat/…).
+**Deployed:** `_work/pool_current.txt` → `pool_active.parquet`, `systemctl --user restart
+ninjastar8.service` (rc=0, is-active=active). **Ratings are a separate append-only file —
+verified 286 rows before == 286 after the swap (PRESERVED).** The phone now serves the
+active-learning queue; rate them, then re-run 47 → 48 to tighten the loop. Reversible: point
+pool_current.txt back at `pool_v2.parquet`.
+
 ### 2026-06-22 (Task 1 upgrade) — canonical taste propagator (47) + embedded the new MIDI drop
 
 **Canonical propagator `CODE/47_propagator.py`** (supersedes 46_taste_rerank / 37_taste_stub).
