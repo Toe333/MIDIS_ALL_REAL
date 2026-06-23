@@ -107,6 +107,18 @@ S:     .  .  X  .  X  .  X  .  .  .  X  .  X  .  X  .
 ```
 **Why:** galloping ride + snare driving the offbeat 8ths over a backbeat = surf drive.
 
+### `surf_variant_01`
+**PT:** `(HK).H.(HS).S.H.H.(HS).H.`  *(from the `khsshhsh` 8th-note skeleton, one event per 8th)*
+```
+16ths: 1  2  3  4  5  6  7  8  9 10 11 12 13 14 15 16
+H:     X  .  X  .  X  .  .  .  X  .  X  .  X  .  X  .   (closed hat on every beat + the &s)
+K:     X  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .   (beat 1)
+S:     .  .  .  .  X  .  X  .  .  .  .  .  X  .  .  .   (beats 2, "& of 2", and 4)
+```
+**Why:** the `k h s s h h s h` 8th-note skeleton laid on the 16th grid (one event per beat/&),
+with a closed hat added on **every beat** (the quarter pulse) joined by the skeleton's own
+offbeat hats. Kick anchors beat 1; the snare drives 2, the "& of 2", and 4 — the surf push.
+
 ### `reggaeton_dembow`
 **PT:** `(HK).HS(HK).(HS).(HK).HS(HK).(HS).`
 ```
