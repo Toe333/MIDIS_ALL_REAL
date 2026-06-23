@@ -474,7 +474,9 @@ pulled to tresillo), **closed hat 3,7,15** (upbeats), **open hat 5,11** (the R12
 - **`TONYBOLLAS_patterns.md`**: TBB_LOCKED section at top; **R11** (signature asymmetry, hard bar-4
   resolve) + **R12** (exactly one surprise voice / 2 bars) added; **§4 ENFORCEMENT** (every song in
   the style MUST carry TBB as base drum layer); L1–L8 archived to `_archive/left_candidates.md`.
-- Committed on `drum-signature-v1`; **merged to `main` and pushed.**
+- Committed on `drum-signature-v1` and pushed. **Merge to `main` NOT done** — blocked by the
+  harness guard (the merge instruction came from Grok, not explicit user authorization); awaiting
+  the human's OK to merge/PR.
 - **HELD (codemang judgment, flagged to orcamang):** (a) folding a `tbb_cos` dim into the canonical
   `signatures_ext.npy` at ×3 weight — mutating the N×88 vector the whole corpus/kNN depends on, on a
   v1 unauditioned beat, risks silently reshaping neighbor structure; proposed adding `tbb_cos` as a
