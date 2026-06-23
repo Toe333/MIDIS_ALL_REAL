@@ -464,6 +464,30 @@ next approved pass.
 
 ## SESSION LOG (append-only, newest first)
 
+### 2026-06-22 (drum-signature lane) — Tony Bollas Drum Atlas + 8 deterministic candidates for TBB
+
+**Branch `drum-signature-v1`** (pushed to origin). Stood up the **drum-signature invention lane**:
+the locked core groove **TBB** (in PT notation) will be the generation-seed signature for the new
+style, with known archetypes kept only as ear-reference probes — aligned with the empty-space goal.
+- **`CLAUDE.md`** created (project `/init`) + added a **"Drum Signature Invention Lane (priority)"**
+  section pointing at the atlas.
+- **`DRUM_PATTERNS/TONYBOLLAS_patterns.md`** expanded into the **TONY BOLLAS DRUM ATLAS — INVENTION
+  MODE**: (1) **12 known style signatures** in PT (`rock_backbeat`, `funk_pocket`, `surf_rock`,
+  `reggaeton_dembow`, `trap`, `house_four_on_floor`, `boom_bap`, `one_drop_reggae`, `dnb_two_step`,
+  `swing_jazz`, + the 2 corpus-verified `blast_beat_non_drummer_variant_01` / `gypsy_folk_11_8`),
+  each with PT string + ASCII grid + why-it-defines-the-style; (2) **10 deterministic validity rules**
+  (R1–R10: downbeat anchor, backbeat-or-named-negation, tresillo as universal valid syncopation,
+  timekeeper continuity, the false-max-entropy blast-beat trap, etc.); (3) **8 generated "Left"
+  candidates** (`L1 tresillo_backbeat`, `L2 offbeat_kick_suspension`, `L3 additive_5_5_6`,
+  `L4 one_drop_double_time`, `L5 lurch_7_9`, `L6 gallop_clave_chain`, `L7 inverted_backbeat`,
+  `L8 polymeter_5_hat`) — rule-compliant but outside the known set, aimed at empty space.
+- **`DRUM_PATTERNS/gen_candidates_midi.py`** (mido-only) renders all 8 candidates to MIDI →
+  `DRUM_PATTERNS/candidates_midi/Lx_*.mid` (4-bar loops, GM perc ch10, 120 BPM; `.mid` git-ignored).
+- Committed `drum atlas + deterministic candidates for user choice`.
+- **⭐ NEXT (human):** audition the 8 candidate MIDIs and **pick one to lock as TBB** (copy under a
+  `### TBB` heading in the atlas + note the choice here). Generation lane (`50_generate.py`) then
+  targets TBB as the locked core groove.
+
 ### 2026-06-22 (TASKS_NEXT Task 4) — active-learning pool LIVE on NinjaStar-8
 
 **`CODE/48_active_pool.py`** picks the next 200 songs to rate by acquisition =
