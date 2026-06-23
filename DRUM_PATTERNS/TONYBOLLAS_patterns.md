@@ -213,6 +213,36 @@ Cab:     X    .    .    .    .    .    .    .    .    .    .
 
 ---
 
+## 1A. Captured Pad Inventions (session 2026-06-23, played by orcamang)
+
+Live-played on `drumpad.html`, quantized to the 16th grid. Novel candidates (not
+ear-reference probes, not corpus-verified) — kick/snare skeletons; hat layer TBD.
+
+### `halftime_push_01`
+**PT:** `K.......S.K...K.`
+```
+16ths: 1  2  3  4  5  6  7  8  9 10 11 12 13 14 15 16
+K:     X  .  .  .  .  .  .  .  .  .  X  .  .  .  X  .
+S:     .  .  .  .  .  .  .  .  X  .  .  .  .  .  .  .
+```
+**Why:** half-time feel — a lone backbeat snare on **beat 3** (not 2 & 4) over kick on
+the downbeat plus two pushed kicks on the "& of 3" (slot 11) and "& of 4" (slot 15). The
+slot-15 push spills into the loop turnaround for a laid-back trap/half-time-rock pocket.
+
+### `anchored_syncopation_01`
+**PT:** `.K...(SK)..S..K...S`
+```
+16ths: 1  2  3  4  5  6  7  8  9 10 11 12 13 14 15 16
+K:     .  X  .  .  .  X  .  .  .  .  .  X  .  .  .  .
+S:     .  .  .  .  .  X  .  .  X  .  .  .  .  .  .  X
+```
+**Why:** an off-kilter groove that still gives the ear an anchor — snare on **beat 3**
+(slot 9) is the half-time backbeat, while everything else lands on "e/a" subdivisions:
+kick on the e-of-1, a stacked **(SK)** shove on the e-of-2, kick on the a-of-3, and a
+snare on the a-of-4 pushing into the loop. Syncopated drive over one real anchor.
+
+---
+
 ## 2. Deterministic Rules for Valid Patterns
 
 Rules a 16th-grid must satisfy to read as "musical" (used to gate Section 3). A pattern

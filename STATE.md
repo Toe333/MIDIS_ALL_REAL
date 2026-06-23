@@ -464,6 +464,22 @@ next approved pass.
 
 ## SESSION LOG (append-only, newest first)
 
+### 2026-06-22 — git check + next 5 (TBB-sacred, post closed-loop)
+- Git check executed on lab box: `git status`, `git log --oneline -10`, `git branch -a`, `git remote -v`.
+  - On `main` (up-to-date with origin/main).
+  - Dirty: `DRUM_PATTERNS/TONYBOLLAS_patterns.md`, `STATE.md` (prior TBB style entries).
+  - Untracked: `MIDIS-REFACTOR-PLAN.md`, `8-bit.json`, `DRUM_PATTERNS/{drumpad.html,eighth_patterns.json,gen_eighth_patterns.py}`, `SHEETMUSIC_MXL_PDF/` (new refs).
+  - Recent commits: tbb_style_v1 (10 anchored songs, 33/45 beat real donors), tbb_anchored target, --force-drum TBB enforcement, TBB lock + tbb_cos.
+- Confirmed on-disk: `signatures_ext.npy` 459805×88, TBB_locked.mid present + exemplars, `_work/tbb_cos.parquet` + versioned `signatures_ext_tbb_v1.npy` (89-D), `taste_pred_v2.parquet` live, `ninjastar8_ratings.parquet` (286 rows / 275 unique, 7 axes incl. spark), active pool live, generation seeds + tbb_* webplayer groups ready.
+- **Next 5 (strict sequential order, TBB/groove first, no lane cross without OK):**
+  1. Git hygiene + commit/push (this entry). Handle untracked (commit REFACTOR-PLAN as analysis snapshot or ignore transients).
+  2. Human ear audition of `tbb_style_v1` (10 anchored) + TBB_locked + recent gens. Verdict + lock best targets (high-tbb_cos neighborhoods or anchored). This decides generation direction.
+  3. Rate active pool (~150-200 on phone). Re-run `CODE/47_propagator.py` (groove-weighted) then `48_active_pool.py`. Tighten groove CV.
+  4. TBB harness: `CODE/tests/test_tbb.py` (49 roundtrip cos=1, enforcement preserves, 50 --force-drum). Safe additive fold of tbb_cos (from _work) into `catalog/metadata.parquet` + sqlite (like GrooveDNA; canonical sig untouched).
+  5. UMAP refresh on N×88 (backups), upgrade `28_mapserver` (taste tint + TBB cos overlay + corners). More TBB-enforced gens into locked targets. Webplayer groups. Append log + commit.
+- Arch rules followed: append-only ratings/parquets, versioned artifacts, provenance cols, TBB as non-negotiable DNA (target the pocket, not old corners). Human ear is gate for "inevitable new music".
+- todo list opened for the 5. Ready for .venv-linux execution. Human: provide audition verdict to proceed.
+
 ### 2026-06-22 (drum-signature lane) — tbb_style_v1: 10 anchored songs (33/45 beat donors)
 
 Larger `--target tbb_anchored --force-drum TBB` batch over 5 corners: **33/45 candidates beat the real
