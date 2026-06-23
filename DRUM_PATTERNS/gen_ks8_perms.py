@@ -17,9 +17,8 @@ Usage:
   python3 gen_ks8_perms.py                 # generate all individuals + index
   python3 gen_ks8_perms.py --combined      # also make one big file
 
-Then audition:
-  webplayer add DRUM_PATTERNS/ks8_loops/*.mid --group ks8_audit
-  webplayer open
+Then audition the .mid files directly in your MIDI player / DAW (or any tool that plays MIDI).
+The raw .mid loops are the primary deliverable for pattern hunting.
 
 Grid: 8 positions = one bar of 8th notes.
 Hats (42) on all 8 positions every bar.
@@ -33,13 +32,13 @@ import argparse
 ROOT = os.path.dirname(os.path.abspath(__file__))
 OUT_DIR = os.path.join(ROOT, "ks8_loops")
 INDEX_FILE = os.path.join(ROOT, "ks8_index.txt")
-COMBINED = os.path.join(ROOT, f"ks8_all_{BARS}bar.mid")
 
 GM = {"K": 36, "S": 38, "H": 42}
 BPM = 120
 BARS = 16         # short loop per pattern (user requested ~16 bars)
 TPB = 480
 SLOT_TICKS = TPB // 2   # 8th note grid
+COMBINED = os.path.join(ROOT, f"ks8_all_{BARS}bar.mid")
 
 def pat_to_events(pat, bars):
     """Return list of (tick, 'on'/'off', note, vel) for one pattern repeated 'bars' times."""
