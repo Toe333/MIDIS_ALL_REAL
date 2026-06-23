@@ -33,7 +33,7 @@ import argparse
 ROOT = os.path.dirname(os.path.abspath(__file__))
 OUT_DIR = os.path.join(ROOT, "ks8_loops")
 INDEX_FILE = os.path.join(ROOT, "ks8_index.txt")
-COMBINED = os.path.join(ROOT, "ks8_all_8bar.mid")
+COMBINED = os.path.join(ROOT, f"ks8_all_{BARS}bar.mid")
 
 GM = {"K": 36, "S": 38, "H": 42}
 BPM = 120
@@ -138,10 +138,11 @@ def main():
         big.save(COMBINED)
         print("Wrote combined:", COMBINED)
 
-    print("\nTo audition in webplayer:")
-    print(f"  webplayer add {OUT_DIR}/*.mid --group ks8_audit")
-    print("  webplayer open")
-    print("Or add specific ones: webplayer add ...ks0123_....mid --group ks8_audit --label 'kskkskss'")
+    print("\nTo audition: the .mid files are ready for any MIDI player / DAW.")
+    print(f"  Individuals: {OUT_DIR}/")
+    print(f"  Combined (all in one file with labels): {COMBINED}")
+    print("  Copy the folder to your machine and load in your MIDI player.")
+    print("  (webplayer add is optional if you want them as audio groups too, but raw .mid is better for pattern hunting.)")
 
 if __name__ == "__main__":
     main()
