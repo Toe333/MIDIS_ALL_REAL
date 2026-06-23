@@ -198,9 +198,34 @@ def _cos(a, b):
 
 
 # ----------------------------- main ----------------------------------------
-def generate_corner(rank, caption, force_drum, diatonic, tbb_loop):
+# ext pillar layout: pitch36 / rhythm20 / melody13 / harmony8 / groove11 = 88
+P_RHYTHM = slice(36, 56)
+P_GROOVE = slice(77, 88)
+_TBB_EXT = None
+
+
+def tbb_ext_vec():
+    """TBB_locked.mid embedded in the 88-D ext space (we use its rhythm+groove pillars)."""
+    global _TBB_EXT
+    if _TBB_EXT is None:
+        _TBB_EXT = _S.vector_from_midi(TBB_MID).astype(np.float64)
+    return _TBB_EXT
+
+
+def anchor_tbb(tgt):
+    """Overwrite the rhythm + groove pillars of a corner target with TBB's, renormalize."""
+    t = tgt.copy()
+    tv = tbb_ext_vec()
+    t[P_RHYTHM] = tv[P_RHYTHM]
+    t[P_GROOVE] = tv[P_GROOVE]
+    return t / (np.linalg.norm(t) + 1e-12)
+
+
+def generate_corner(rank, caption, force_drum, diatonic, tbb_loop, target_mode="corner"):
     """Build recombination candidates for one corner; returns (list[cand], base, cap)."""
     cap, donors, tgt, felt_bpm, nsim = pick_corner(rank, caption)
+    if target_mode == "tbb_anchored":
+        tgt = anchor_tbb(tgt)
     slug = re.sub(r"[^a-z0-9]+", "_", cap.lower())[:40].strip("_")
     outdir = os.path.join(OUTBASE, "tbb_birth" if force_drum else slug, slug)
     print(f"[corner rank={rank}] {cap}  donors={donors} felt_bpm={felt_bpm}")
@@ -250,6 +275,8 @@ def main():
     ap.add_argument("--keep", type=int, default=6)
     ap.add_argument("--diatonic", type=float, default=0.6)
     ap.add_argument("--force-drum", default=None, help="TBB = force the locked TBB beat as base drum layer")
+    ap.add_argument("--target", default="corner", choices=["corner", "tbb_anchored"],
+                    help="tbb_anchored = score vs corner pitch/melody/harmony + TBB rhythm/groove")
     ap.add_argument("--group", default=None)
     ap.add_argument("--no-audio", action="store_true")
     args = ap.parse_args()
@@ -264,7 +291,7 @@ def main():
     all_cands = []
     base = 0.0
     for rk in ranks:
-        cs, b, cap = generate_corner(rk, args.corner_caption, force, args.diatonic, tbb_loop)
+        cs, b, cap = generate_corner(rk, args.corner_caption, force, args.diatonic, tbb_loop, args.target)
         all_cands += cs
         base = max(base, b)
     if not all_cands:
