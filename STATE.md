@@ -464,6 +464,20 @@ next approved pass.
 
 ## SESSION LOG (append-only, newest first)
 
+### 2026-06-22 (drum-signature lane) — `--target tbb_anchored` + pool; everything on MAIN
+
+Resolved the "TBB fights the corner" tension. `CODE/50_generate.py` gained **`--target tbb_anchored`**:
+the target = a corner's signatures_ext vector with the **rhythm(20)+groove(11) pillars overwritten by
+TBB's** (TBB embedded via `49_sig_one.vector_from_midi`), renormalized — so candidates are scored for
+corner pitch/melody/harmony **and** TBB feel. **Result flip:** against the anchored target, **22/27
+TBB-enforced candidates BEAT the real donors** (top 0.584 vs donor 0.418); under the old corner target
+it was **0/36**. I.e. generated TBB songs now sit closer to the on-style target than their own source
+material. 20 rendered to **webplayer group `tbb_style_birth`**; top-3 in `DRUM_PATTERNS/tbb_exemplars/anchored/`.
+Also built **`pools/tbb_compatible_200.parquet`** (200 cleanest corpus songs by tbb_cos, 0.707–0.793) for
+a future rating sprint. **Git: all merged to `main` (one branch now, user's call); work continues on main.**
+**Still HELD for human:** NinjaStar-8 lane crossing (live phone app/service/pool + TBB_Fit slider) — user
+asked what it was but has NOT greenlit it. Audio is in the webplayer for the human's ear verdict.
+
 ### 2026-06-22 (drum-signature lane) — generator `--force-drum TBB` + 30 enforced gens
 
 `CODE/50_generate.py` gained **`--force-drum TBB`** (loads `TBB_locked.mid`, tiles it across each
