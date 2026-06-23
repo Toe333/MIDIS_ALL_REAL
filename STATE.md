@@ -464,6 +464,23 @@ next approved pass.
 
 ## SESSION LOG (append-only, newest first)
 
+### 2026-06-23 — KS8 brute-force permutation hunt (pure kick+snare skeletons)
+- User instructions: Do **not** commit 8-bit.* (or similar experiment sources). SSH to t@imac and move the file to ~/Desktop/ or ~/there-mang-linux/ (found via ssh: there-mang-linux, there-mang-linux-copy, there-mang-for-heavy exist on Mac).
+- Listening verdict on prior work (tbb_style_v1 + all_256 + gens): "i dont mind the beat" but "got rid of the boogie woogies piano, its already a style and kind of corny". "i kept the decent ones but we arent there yet".
+- New systematic approach specified: every permutation of K and S in an **8-position** pattern (256 total, e.g. `kskkskss`, `kskksksk` ... `ssssssss`). Assume hi-hat on every slot. Short loops (user said ~16 bars, we did 8-bar for practicality; easy to change). Pure drums only. Output individual versions for the MIDI player so "anything jumps out".
+- Implemented + ran `DRUM_PATTERNS/gen_ks8_perms.py` (modeled on gen_tbb.py, mido, ch9, 120 BPM, 8th-note 8-slot grid, constant hats vel~75, K/S vel 100-105).
+  - 256 individual `.mid` files in `DRUM_PATTERNS/ks8_loops/` (ks0000_kkkkkkkk.mid ... ks0255_ssssssss.mid).
+  - `DRUM_PATTERNS/ks8_index.txt` (idx + pattern, tab-separated).
+  - All outputs + generator + prior `all_256.mid` scp'ed via `ssh t@imac` to both Desktop and ~/there-mang-linux/.
+- 8-bit.json (likely the bit/perm source for the prior all_256) was not present on this Linux box (untracked files had been cleaned in prior steps). Transferred the concrete outputs (MIDIs + index + script) instead. Will scp the exact json if path provided.
+- Audition notes:
+  - Raw `.mid` ready for any MIDI player / DAW / browser synth (direct load the folder on your Mac).
+  - The project's `webplayer add` expects rendered audio (not raw .mid). Background render of all 256 to `ks8_wav/*.wav` started using local GeneralUserGS.sf2; will `webplayer add` to group `ks8_audit` once done.
+  - Old `all_256.mid` (1-bar sequenced) also transferred for comparison.
+- This replaces hand-crafted "LEFT" candidates with full enumeration of the 8-slot KS space (hi-hats fixed). Goal: find the "jumps out" pocket that becomes the locked TBB foundation (or evolve the 16-slot TBB rules from it). No other instruments to avoid style pollution.
+- Git: respected "don't commit the 8-bit junk". Generated MIDIs left untracked (per project .gitignore convention for *.mid). Script + index are the artifacts to keep under version control if desired.
+- Next: human listens on Mac (or here after WAVs), reports indices/patterns that have the "transcendent pocket/lock-in / why didn't I think of that" feel. Then lock + enforce + generate with it.
+
 ### 2026-06-22 — git check + next 5 (TBB-sacred, post closed-loop)
 - Git check executed on lab box: `git status`, `git log --oneline -10`, `git branch -a`, `git remote -v`.
   - On `main` (up-to-date with origin/main).
