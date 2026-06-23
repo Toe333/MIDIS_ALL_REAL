@@ -464,6 +464,21 @@ next approved pass.
 
 ## SESSION LOG (append-only, newest first)
 
+### 2026-06-22 (drum-signature lane) — generator `--force-drum TBB` + 30 enforced gens
+
+`CODE/50_generate.py` gained **`--force-drum TBB`** (loads `TBB_locked.mid`, tiles it across each
+candidate, substitutes it for the donor drum stem) + `--ranks`/`--group`. Ran ranks 1–4 →
+**36/36 candidates carry the TBB beat**; 30 rendered to **webplayer group `tbb_birth30`**. Top-3 by
+cos copied to `DRUM_PATTERNS/tbb_exemplars/` (`cand_dTBB_m4b1f_h09b0` 0.714, `…m7e9e_h4b1f` 0.712,
+`…m4b1f_h4b1f` 0.704 — all from the rank-3 *127bpm triplet* corner, the most TBB-compatible).
+**KEY FINDING (reported to orcamang):** forcing TBB **lowers cos-to-corner** (best 0.71, vs the real
+donors at 0.82–0.96) because **TBB's gallop-clave groove is itself an empty corner** — so "enforce
+TBB" and "aim at the donor-defined corners" pull against each other. The correct generation target
+for the new style is the **high-`tbb_cos` neighborhood**, not the old groove-defined corners; the
+generator should be re-pointed at a TBB-anchored target next. **HELD for human:** NinjaStar-8 lane
+crossing (live service/pool) + GitHub PR/merge. Audio is in the webplayer for the human to audition
+(codemang can't ear-verdict).
+
 ### 2026-06-22 (drum-signature lane) — tbb_cos feature + versioned signature (SAFE/additive)
 
 `CODE/51_tbb_feature.py` embeds the locked **TBB_locked.mid** into 31's 72-D DrumDNA space
