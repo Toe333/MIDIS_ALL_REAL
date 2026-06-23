@@ -464,6 +464,13 @@ next approved pass.
 
 ## SESSION LOG (append-only, newest first)
 
+### 2026-06-22 (drum-signature lane) — tbb_style_v1: 10 anchored songs (33/45 beat donors)
+
+Larger `--target tbb_anchored --force-drum TBB` batch over 5 corners: **33/45 candidates beat the real
+donors** (top 0.668), 10 rendered to **webplayer group `tbb_style_v1`** for audition. Confirms the
+anchored objective is stable across corners (was 22/27 on the 3-corner run). NinjaStar lane + TBB_Fit
+retrain remain HELD (human not greenlit). All on main.
+
 ### 2026-06-22 (drum-signature lane) — `--target tbb_anchored` + pool; everything on MAIN
 
 Resolved the "TBB fights the corner" tension. `CODE/50_generate.py` gained **`--target tbb_anchored`**:
