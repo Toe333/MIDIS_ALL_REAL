@@ -464,6 +464,25 @@ next approved pass.
 
 ## SESSION LOG (append-only, newest first)
 
+### 2026-06-22 (drum-signature lane) — tbb_cos feature + versioned signature (SAFE/additive)
+
+`CODE/51_tbb_feature.py` embeds the locked **TBB_locked.mid** into 31's 72-D DrumDNA space
+(parse → `drum_of` → 31's per-block `_scale_block`/`_l2`) and scores every song's cosine to it.
+**Quantitative empty-corner confirmation:** over 311,412 drum-bearing songs, `tbb_cos` median
+**0.390**, max **0.793**, and only **2 songs exceed 0.78** — TBB really does sit in near-empty
+groove space (top md5: `5dc93909` .793, `eb9f729e` .787; NOT the blast `5672a901` Grok guessed).
+**All non-destructive:** wrote `_work/tbb_cos.parquet` (459,805 rows, left-mergeable like GrooveDNA;
+the canonical `metadata.parquet`/`catalog.sqlite` were deliberately NOT mutated — the harness
+correctly blocked the in-place rewrite, and the staged-parquet design is better anyway) +
+`SIGNATURES_DATA/signatures_ext_tbb_v1.npy` (459805×**89** = ext 88 + tbb_cos×3 as dim 89) +
+`knn_cosine_tbb_v1.pkl`. **Canonical `signatures_ext.npy`/`knn_cosine.pkl` untouched** (no symlink
+repoint until human audition). Rendered `TBB_locked.mid`→WAV into webplayer group `tbb_lock` for
+the human to audition (codemang can't ear-verdict).
+**HELD (flagged, not auto-run):** orcamang's NinjaStar-8 block — editing `ninjastar8.py` DIMS
+(add "TBB_Fit"), restarting the live service, retraining the propagator, and **swapping the live
+phone pool** — crosses into the separate annotator lane STATE.md says corpus work must not touch
+and mutates a live service; needs explicit human OK. Generator `--force-drum TBB` + 30-gen is next.
+
 ### 2026-06-22 (drum-signature lane) — TBB v1 LOCKED ("5-5-6 gallop clave")
 
 orcamang locked **TBB v1** = the **L3 (additive 5+5+6) × L6 (gallop clave)** hybrid (branch

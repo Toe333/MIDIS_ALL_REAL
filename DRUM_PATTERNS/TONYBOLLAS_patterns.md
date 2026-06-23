@@ -30,11 +30,21 @@
 | Clv | Claves (GM 75) |
 | ( ) | Simultaneous hits within one slot |
 | + | Separator between multi-character names within a slot |
-| . | Rest (empty slot) |
+| . | Rest (empty slot — silence) |
+| - | Tie / sustain (previous slot's sound continues, no new attack) |
 | [ ] | Metric grouping bracket (used for odd meters) |
 
 > One `( )` group = one **16th note** by default. Grid resolution is **16th notes**
 > unless stated otherwise (swing uses 8th-triplets; odd meters state their slot count).
+>
+> **Durations & ties.** Each slot is one 16th and holds exactly one of: an **attack** (an
+> instrument letter or `( )` group), a **tie** `-` (the previous sound continues — no new
+> attack), or a **rest** `.` (silence). A tie sets duration: `K` = 16th kick, `K-` = 8th,
+> `K--` = dotted 8th, `K---` = quarter; `K.` = a 16th kick then a 16th of silence. For
+> one-shots (K, S, closed H) the tie is a duration/feel marker; for ringing voices (O, R,
+> C, T) `-` = let ring and `.` = choke/dampen. A trailing `-` after a `( )` group ties the
+> whole slot — to tie only one stacked voice, use the per-instrument grid, where each row
+> reads `X` = attack, `-` = sustain, `.` = rest.
 
 ---
 
