@@ -37,7 +37,7 @@ COMBINED = os.path.join(ROOT, "ks8_all_8bar.mid")
 
 GM = {"K": 36, "S": 38, "H": 42}
 BPM = 120
-BARS = 8          # short loop per pattern — change to 16 if you want longer
+BARS = 16         # short loop per pattern (user requested ~16 bars)
 TPB = 480
 SLOT_TICKS = TPB // 2   # 8th note grid
 
