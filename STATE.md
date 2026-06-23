@@ -149,7 +149,42 @@ The current pipeline has these known rhythm detection failures, confirmed by ear
 
 ## CURRENT STATUS (always reflects the latest session)
 
-**As of 2026-06-20 (latest) — signature refreshed to N×88, empty-space hunt re-run, docs brought current.** The rhythm pillar now folds in the corrected tempo/meter (`felt_bpm`, `ts_num`, `ts_compound`) → **`SIGNATURES_DATA/signatures_ext.npy` is N×88** (pitch 36 / rhythm 20 / melody 13 / harmony 8 / groove 11; rhythm & groove ×2-weighted), cosine `knn_cosine.pkl` refit, validated no-regression (meter & felt-tempo now cluster; swing/sync unchanged). The empty-space hunt was **re-run on N×88** (`_work/emptyspace/`: 1200 clusters, 60 blends + 60 isolated, captioned with meter+felt-tempo; ~0% corner overlap with the old N×74 run; top-10 in webplayer group `emptyspace_n88`). MANUAL.md + this file's evergreen reference sections updated to 88-D / ~201 cols; obsolete handoffs removed. **Use `signatures_ext.npy` (N×88) + `knn_cosine.pkl` going forward.** Next steps catalogued in `TASKS_NEXT.md`. See top Session Log entries.
+**As of 2026-06-22 (latest) — the taste→groove→generate loop is now CLOSED end-to-end.** Four
+things shipped today (all committed; see the four 2026-06-22 Session Log entries for detail):
+1. **Embed any single MIDI into the live N×88 space** — `CODE/49_sig_one.py` re-derives the
+   scaler 26 never saved and reuses the per-file feature functions; verified round-trip
+   **cosine 1.0000** (median over 120 songs) vs the stored rows. This is the missing primitive
+   that lets us score *new* / *external* files against the corpus and the empty corners.
+2. **Route-C generator** — `CODE/50_generate.py` recombines an empty corner's nearest-donor
+   stems (drums/melody/harmony) at the corner BPM, scores each candidate with 49, gates on
+   beauty, renders to webplayer. Works but only reaches the *rim* of empty space (the corner is
+   empty by construction); the stretch is theory-steered generation.
+3. **Canonical taste propagator** — `CODE/47_propagator.py` → **`_work/taste_pred_v2.parquet`**
+   (md5 + 7 pred axes + `pred_love` + `unc_love` + provenance cols). Train on **v2 ratings only**
+   (n=131; mixing v1 legacy hurts CV). Only **musicality/novelty/groove** carry signal; groove
+   tuned to up=3/alpha=300 (r≈0.36). `pred_love` is groove-dominant. 120 corners ranked →
+   `_work/generation_seeds/targets_taste_v2_20260622.csv`.
+4. **Active learning is LIVE** — `CODE/48_active_pool.py` put 200 high-information songs
+   (uncertainty + empty-corner proximity, groove-balanced) on the phone
+   (`pool_current.txt`→`pool_active.parquet`, `ninjastar8.service` restarted, **286 ratings
+   preserved**).
+
+> **WHERE WE STAND / WHAT'S NEXT.** The pipeline is VECTORIZED (N×88) and now also *generative*
+> + *taste-aware*. **The single highest-leverage action is human: rate the 200-song active pool
+> on the phone, then re-run `47_propagator.py` → `48_active_pool.py`** to tighten the groove
+> model (it's the bottleneck — r≈0.36). Open engineering, in priority order:
+> (a) **Task 3** — re-embed UMAP on N×88 + mapserver with taste tint + corner overlay (the visual
+> map is still N×74-era); (b) **Task 5** — fold `taste_pred_v2` into `catalog.sqlite` as view
+> `v_good_empty` (canonical parquet + provenance done; the SQL view is the open piece);
+> (c) **Stretch** — theory-steered generation (music_rules/SkyTNT + rejection sampling) to push
+> *into* empty space instead of hovering at its rim; de-dup donor selection in 50.
+> **Data note from today:** embedding the user's new MIDI drop confirmed **odd-meter groove is
+> genuine empty space** (every gypsy 11/8–11/16 pattern maps nearest to a 4/4 corpus song); Max
+> Roach "minor trouble", Fela, and the gypsy patterns are the strongest seed/anchor candidates.
+> **Use going forward:** `signatures_ext.npy` (N×88) + `knn_cosine.pkl`; `49_sig_one.py` to embed
+> new files; `taste_pred_v2.parquet` (canonical taste) + `targets_taste_v2_20260622.csv`.
+
+**As of 2026-06-20 — signature refreshed to N×88, empty-space hunt re-run, docs brought current.** The rhythm pillar now folds in the corrected tempo/meter (`felt_bpm`, `ts_num`, `ts_compound`) → **`SIGNATURES_DATA/signatures_ext.npy` is N×88** (pitch 36 / rhythm 20 / melody 13 / harmony 8 / groove 11; rhythm & groove ×2-weighted), cosine `knn_cosine.pkl` refit, validated no-regression (meter & felt-tempo now cluster; swing/sync unchanged). The empty-space hunt was **re-run on N×88** (`_work/emptyspace/`: 1200 clusters, 60 blends + 60 isolated, captioned with meter+felt-tempo; ~0% corner overlap with the old N×74 run; top-10 in webplayer group `emptyspace_n88`). MANUAL.md + this file's evergreen reference sections updated to 88-D / ~201 cols; obsolete handoffs removed. **Use `signatures_ext.npy` (N×88) + `knn_cosine.pkl` going forward.** Next steps catalogued in `TASKS_NEXT.md`. See top Session Log entries.
 
 **As of 2026-06-20 — DETECTION-ACCURACY PASS done & merged into the catalog.** The #1-priority "fix the data" work: BPM (`tempos[0]` bug, 13.5% of corpus wrong), real-meter recovery (hybrid `ts_final`), `felt_bpm` (half/double), and key-confidence (`key_corr`, was a broken metric) are all fixed and **folded additively into `metadata.parquet`/`catalog.sqlite`** (18 new `*_v2` cols; originals kept). Ear-validated on 5 songs (BPM 60→80%, KEY 100%, TS 100%). Drum density investigated → fine at scale (no re-derive needed). See top Session Log entry. **Use `bpm_v2`/`ts_final`/`key_v2`+`key_corr` going forward.** (Prior status below still holds for the taste/empty-space lane.)
 
