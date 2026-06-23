@@ -464,6 +464,25 @@ next approved pass.
 
 ## SESSION LOG (append-only, newest first)
 
+### 2026-06-22 (drum-signature lane) — TBB v1 LOCKED ("5-5-6 gallop clave")
+
+orcamang locked **TBB v1** = the **L3 (additive 5+5+6) × L6 (gallop clave)** hybrid (branch
+`drum-signature-v1`). codemang's concrete reading of the (loose) spec: 16th grid, 118 BPM —
+**kick 1,4,7,10,13** (3+3+3+3+4 gallop chain), **snare accent 7,13 + ghosts 3,10,15** (backbeat
+pulled to tresillo), **closed hat 3,7,15** (upbeats), **open hat 5,11** (the R12 surprise voice).
+- **`DRUM_PATTERNS/TBB_locked.mid`** rendered (`gen_tbb.py`, mido, ch10, 4-bar loop, 118 BPM).
+- **`TONYBOLLAS_patterns.md`**: TBB_LOCKED section at top; **R11** (signature asymmetry, hard bar-4
+  resolve) + **R12** (exactly one surprise voice / 2 bars) added; **§4 ENFORCEMENT** (every song in
+  the style MUST carry TBB as base drum layer); L1–L8 archived to `_archive/left_candidates.md`.
+- Committed on `drum-signature-v1`; **merged to `main` and pushed.**
+- **HELD (codemang judgment, flagged to orcamang):** (a) folding a `tbb_cos` dim into the canonical
+  `signatures_ext.npy` at ×3 weight — mutating the N×88 vector the whole corpus/kNN depends on, on a
+  v1 unauditioned beat, risks silently reshaping neighbor structure; proposed adding `tbb_cos` as a
+  cheap **non-folded catalog column** first (cosine of existing drum vectors to TBB — no re-parse).
+  (b) `50_generate.py` does **not** support orcamang's flags (`--target_corner/--force_drum/--count`);
+  real CLI is `--rank/--corner-caption/--keep/--diatonic/--no-audio` and it has no TBB-forcing path yet.
+  Both need a decision before the 30-gen run. **NEXT (human): audition `TBB_locked.mid`.**
+
 ### 2026-06-22 (drum-signature lane) — Tony Bollas Drum Atlas + 8 deterministic candidates for TBB
 
 **Branch `drum-signature-v1`** (pushed to origin). Stood up the **drum-signature invention lane**:

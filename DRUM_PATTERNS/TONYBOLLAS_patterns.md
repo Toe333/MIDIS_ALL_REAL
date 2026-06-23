@@ -38,10 +38,34 @@
 
 ---
 
+## TBB_LOCKED — the style signature (v1, locked 2026-06-22 by orcamang)
+
+> **TBB v1 = the "5-5-6 gallop clave"** — orcamang's locked L3+L6 hybrid. Every song in
+> the new style uses this beat (see §4 Enforcement). Rendered: `DRUM_PATTERNS/TBB_locked.mid`
+> (4-bar loop, 118 BPM, GM perc ch10). orcamang's spec was loose; the grid below is
+> codemang's concrete, auditable reading of it (kick chain from L6, displaced-tresillo
+> snare + open-hat surprise voice from L3) — adjust here if the ear disagrees.
+
+**PT:** `(HK).(Hs)(KO)..(KSH)..(K.s)(KO)..(KS)..(Hs)`  *(see grid; ( ) groups are 16ths)*
+```
+16ths: 1  2  3  4  5  6  7  8  9 10 11 12 13 14 15 16
+K:     X  .  .  X  .  .  X  .  .  X  .  .  X  .  .  .   (1,4,7,10,13 — 3+3+3+3+4 gallop chain)
+S:     .  .  g  .  .  .  X  .  .  g  .  .  X  .  g  .   (X=accent 7,13; g=ghost 3,10,15)
+H:     .  .  X  .  .  .  X  .  .  .  .  .  .  .  X  .   (closed hat on upbeats 3,7,15)
+O:     .  .  .  .  X  .  .  .  .  .  X  .  .  .  .  .   (open hat 5,11 — the R12 surprise voice)
+```
+**Why locked (orcamang):** inevitable body-move (lurch → hard bar-end snap); R1–R12 compliant
+but outside all 12 known styles (empty corner); enforced verbatim at generation time as the
+style's DNA. **BPM 118.**
+
+---
+
 ## 1. Known Style Signature Patterns
 
 Each entry: PT string · grid · why it defines that style. 16-slot = one 4/4 bar at
-16th resolution. These are reference probes, not generation targets.
+16th resolution. These are reference probes, not generation targets. **The 8 "Left"
+candidates (L1–L8) that TBB was chosen from are archived at
+`DRUM_PATTERNS/_archive/left_candidates.md`.**
 
 ### `rock_backbeat`
 **PT:** `(HK).H.(HS).H.(HK).H.(HS).H.`
@@ -182,102 +206,33 @@ may break a rule **only** if it does so by name/design (e.g. one-drop breaks R1)
 - **R8 — Tresillo is the universal valid syncopation.** Hits on 1,4,7 (and 11,14) — the 3+3+2 clave — are inherently musical across every style; prefer it when displacing.
 - **R9 — Open-hat placement.** Open hats belong on upbeats (offbeat 8ths: slots 3,7,11,15) and close on the downbeat.
 - **R10 — Invalid cases to avoid.** (a) a single voice filling all slots with zero bar-to-bar variation read as "complex" (the false-max-entropy blast-beat bug); (b) two colliding backbeats; (c) a hat voice that drops random single 16ths; (d) an unanchored downbeat with no named reason; (e) orphan single hits.
+- **R11 — Signature asymmetry (added 2026-06-22, orcamang).** A style signature must use an **asymmetric grouping** (5/7/11/etc.) that **resolves hard on the bar-4 end** — no floating, unresolved bars. The lurch must always snap back.
+- **R12 — Exactly one surprise voice (added 2026-06-22, orcamang).** A signature must contain **exactly one "surprise voice"** (e.g. an open hat on a non-multiple-of-4 slot) per 2 bars — forces an ear-hook without complexity bloat.
 
 ---
 
-## 3. Generated "Left" Candidates (8)
+## 3. Generated "Left" Candidates — ARCHIVED
 
-Novel patterns that satisfy Section 2 but sit **outside** the known set — coherent,
-yet aimed at empty space (displaced backbeats, additive groupings inside 4/4, hybrid
-grooves, cymbal polymeter). **Human reviews and picks ONE to lock as TBB.** All are
-one 4/4 bar at 16th resolution, ~120 BPM reference.
-
-### L1 — `tresillo_backbeat`
-**PT:** `(HK).HSH.(HS).H.(HK).(HS).H.`
-```
-16ths: 1  2  3  4  5  6  7  8  9 10 11 12 13 14 15 16
-H:     X  .  X  .  X  .  X  .  X  .  X  .  X  .  X  .
-K:     X  .  .  .  .  .  .  .  .  .  X  .  .  .  .  .
-S:     .  .  .  X  .  .  X  .  .  .  .  .  X  .  .  .
-```
-**Why-new:** backbeat pulled toward the tresillo (slot 4 & 7 by R8) while keeping a 2&4 anchor at 13 — a "limping pocket" no straight 4/4 style uses.
-
-### L2 — `offbeat_kick_suspension`
-**PT:** `O.(HK).(HS).(HK).O.(HK).(HS).(HK).`
-```
-16ths: 1  2  3  4  5  6  7  8  9 10 11 12 13 14 15 16
-O:     X  .  .  .  .  .  .  .  X  .  .  .  .  .  .  .
-H:     .  .  X  .  X  .  X  .  .  .  X  .  X  .  X  .
-K:     .  .  X  .  .  .  X  .  .  .  X  .  .  .  X  .
-S:     .  .  .  .  X  .  .  .  .  .  .  .  X  .  .  .
-```
-**Why-new:** the four-on-the-floor kick pushed entirely onto the upbeat 8ths — kick never lands on a downbeat (open hat marks it instead) → perpetual suspension over a held 2&4.
-
-### L3 — `additive_5_5_6`
-**PT:** `(HK)HHHH(HK)HHHH(HK)HH(HS)HH`
-```
-16ths: 1  2  3  4  5  6  7  8  9 10 11 12 13 14 15 16
-H:     X  X  X  X  X  X  X  X  X  X  X  X  X  X  X  X
-K:     X  .  .  .  .  X  .  .  .  .  X  .  .  .  .  .
-S:     .  .  .  .  .  .  .  .  .  .  .  .  X  .  .  .
-```
-**Why-new:** kick accents on a 5+5+6 sixteenth grouping inside straight 4/4 — implies a 5-pulse over the 16-grid (odd-meter feel without leaving 4/4), snare resolves the bar at 13.
-
-### L4 — `one_drop_double_time`
-**PT:** `HHHHHH(HS)H(HKS)H(HS)HHHHH`
-```
-16ths: 1  2  3  4  5  6  7  8  9 10 11 12 13 14 15 16
-H:     X  X  X  X  X  X  X  X  X  X  X  X  X  X  X  X
-K:     .  .  .  .  .  .  .  .  X  .  .  .  .  .  .  .
-S:     .  .  .  .  .  .  X  .  X  .  X  .  .  .  .  .
-```
-**Why-new:** reggae's beat-1 void + beat-3 drop fused with trap's continuous 16th hats and ghost snares flanking the drop — a half-time skank at double-time density.
-
-### L5 — `lurch_7_9`
-**PT:** `(HK).H.(HS).HKH.HSH.H.`
-```
-16ths: 1  2  3  4  5  6  7  8  9 10 11 12 13 14 15 16
-H:     X  .  X  .  X  .  X  .  X  .  X  .  X  .  X  .
-K:     X  .  .  .  .  .  .  X  .  .  .  .  .  .  .  .
-S:     .  .  .  .  X  .  .  .  .  .  .  X  .  .  .  .
-```
-**Why-new:** the bar splits 7+9 — a second kick on slot 8 ("and-a") shoves the second backbeat late to slot 12, a lurching break that still resolves.
-
-### L6 — `gallop_clave_chain`
-**PT:** `(HK)HH(HK)(HS)H(HK)HH(HK)HH(HKS)HHH`
-```
-16ths: 1  2  3  4  5  6  7  8  9 10 11 12 13 14 15 16
-H:     X  X  X  X  X  X  X  X  X  X  X  X  X  X  X  X
-K:     X  .  .  X  .  .  X  .  .  X  .  .  X  .  .  .
-S:     .  .  .  .  X  .  .  .  .  .  .  .  X  .  .  .
-```
-**Why-new:** kick on a strict every-3-sixteenths chain (3+3+3+3+4) — the tresillo extended across the whole bar — a metal gallop that's also a clave, snare keeping 2&4.
-
-### L7 — `inverted_backbeat`
-**PT:** `(HS).H.(HK).H.(HS).H.(HK).H.`
-```
-16ths: 1  2  3  4  5  6  7  8  9 10 11 12 13 14 15 16
-H:     X  .  X  .  X  .  X  .  X  .  X  .  X  .  X  .
-S:     X  .  .  .  .  .  .  .  X  .  .  .  .  .  .  .
-K:     .  .  .  .  X  .  .  .  .  .  .  .  X  .  .  .
-```
-**Why-new:** full inversion of rock — snare on 1 & 3, kick on 2 & 4. The backbeat instruments swap roles; the ear hears a "wrong-way" pocket that still locks to the grid.
-
-### L8 — `polymeter_5_hat`
-**PT:** `(OK)HHH(HS)OHH(HK)HOH(HS)HHO`
-```
-16ths: 1  2  3  4  5  6  7  8  9 10 11 12 13 14 15 16
-O:     X  .  .  .  .  X  .  .  .  .  X  .  .  .  .  X
-H:     .  X  X  X  X  .  X  X  X  X  .  X  X  X  X  .
-K:     X  .  .  .  .  .  .  .  X  .  .  .  .  .  .  .
-S:     .  .  .  .  X  .  .  .  .  .  .  .  X  .  .  .
-```
-**Why-new:** a square backbeat pocket (K 1&9, S 2&4) with an open-hat accent cycling every 5 sixteenths (1,6,11,16) — a 5-against-16 polymeter in the cymbal layer over a straight 4/4 body.
+The 8 rule-compliant novel candidates (L1–L8) that TBB was selected from have been
+**archived to `_archive/left_candidates.md`** now that TBB v1 is locked (see the
+TBB_LOCKED section at the top of this file). They remain auditable for provenance;
+their MIDIs regenerate via `gen_candidates_midi.py`. TBB = the **L3 (additive 5+5+6)
+× L6 (gallop clave)** hybrid.
 
 ---
 
-## How to lock TBB
+## 4. ENFORCEMENT (style DNA)
 
-Pick one Lx above (or a hand-edit of one), copy it under a new `### TBB` heading with its
-final PT string + grid, and note the choice in STATE.md's Session Log. Generation seeds
-(`CODE/50_generate.py` lane) will then target TBB as the locked core groove.
+**Every generated song in the new style MUST carry TBB as its base drum layer** — either
+as the sole kit pattern or overlaid on / replacing any other drum pattern. TBB is the
+non-negotiable signature: the beat is what makes the style the style. Micro-humanized
+timing/velocity variants of TBB are allowed; structural departures from the TBB grid are
+not (that would be a different style). The generator lane (`CODE/50_generate.py`) must
+force the TBB drum layer on every candidate it emits for this style.
+
+---
+
+## How to relock / revise TBB
+
+TBB v1 is locked (see top). To revise: edit the `TBB_LOCKED` grid + re-run
+`gen_tbb.py`, bump the version, and log the change in STATE.md's Session Log.
