@@ -464,6 +464,85 @@ next approved pass.
 
 ## SESSION LOG (append-only, newest first)
 
+### 2026-06-22 (drum-signature lane) — generator `--force-drum TBB` + 30 enforced gens
+
+`CODE/50_generate.py` gained **`--force-drum TBB`** (loads `TBB_locked.mid`, tiles it across each
+candidate, substitutes it for the donor drum stem) + `--ranks`/`--group`. Ran ranks 1–4 →
+**36/36 candidates carry the TBB beat**; 30 rendered to **webplayer group `tbb_birth30`**. Top-3 by
+cos copied to `DRUM_PATTERNS/tbb_exemplars/` (`cand_dTBB_m4b1f_h09b0` 0.714, `…m7e9e_h4b1f` 0.712,
+`…m4b1f_h4b1f` 0.704 — all from the rank-3 *127bpm triplet* corner, the most TBB-compatible).
+**KEY FINDING (reported to orcamang):** forcing TBB **lowers cos-to-corner** (best 0.71, vs the real
+donors at 0.82–0.96) because **TBB's gallop-clave groove is itself an empty corner** — so "enforce
+TBB" and "aim at the donor-defined corners" pull against each other. The correct generation target
+for the new style is the **high-`tbb_cos` neighborhood**, not the old groove-defined corners; the
+generator should be re-pointed at a TBB-anchored target next. **HELD for human:** NinjaStar-8 lane
+crossing (live service/pool) + GitHub PR/merge. Audio is in the webplayer for the human to audition
+(codemang can't ear-verdict).
+
+### 2026-06-22 (drum-signature lane) — tbb_cos feature + versioned signature (SAFE/additive)
+
+`CODE/51_tbb_feature.py` embeds the locked **TBB_locked.mid** into 31's 72-D DrumDNA space
+(parse → `drum_of` → 31's per-block `_scale_block`/`_l2`) and scores every song's cosine to it.
+**Quantitative empty-corner confirmation:** over 311,412 drum-bearing songs, `tbb_cos` median
+**0.390**, max **0.793**, and only **2 songs exceed 0.78** — TBB really does sit in near-empty
+groove space (top md5: `5dc93909` .793, `eb9f729e` .787; NOT the blast `5672a901` Grok guessed).
+**All non-destructive:** wrote `_work/tbb_cos.parquet` (459,805 rows, left-mergeable like GrooveDNA;
+the canonical `metadata.parquet`/`catalog.sqlite` were deliberately NOT mutated — the harness
+correctly blocked the in-place rewrite, and the staged-parquet design is better anyway) +
+`SIGNATURES_DATA/signatures_ext_tbb_v1.npy` (459805×**89** = ext 88 + tbb_cos×3 as dim 89) +
+`knn_cosine_tbb_v1.pkl`. **Canonical `signatures_ext.npy`/`knn_cosine.pkl` untouched** (no symlink
+repoint until human audition). Rendered `TBB_locked.mid`→WAV into webplayer group `tbb_lock` for
+the human to audition (codemang can't ear-verdict).
+**HELD (flagged, not auto-run):** orcamang's NinjaStar-8 block — editing `ninjastar8.py` DIMS
+(add "TBB_Fit"), restarting the live service, retraining the propagator, and **swapping the live
+phone pool** — crosses into the separate annotator lane STATE.md says corpus work must not touch
+and mutates a live service; needs explicit human OK. Generator `--force-drum TBB` + 30-gen is next.
+
+### 2026-06-22 (drum-signature lane) — TBB v1 LOCKED ("5-5-6 gallop clave")
+
+orcamang locked **TBB v1** = the **L3 (additive 5+5+6) × L6 (gallop clave)** hybrid (branch
+`drum-signature-v1`). codemang's concrete reading of the (loose) spec: 16th grid, 118 BPM —
+**kick 1,4,7,10,13** (3+3+3+3+4 gallop chain), **snare accent 7,13 + ghosts 3,10,15** (backbeat
+pulled to tresillo), **closed hat 3,7,15** (upbeats), **open hat 5,11** (the R12 surprise voice).
+- **`DRUM_PATTERNS/TBB_locked.mid`** rendered (`gen_tbb.py`, mido, ch10, 4-bar loop, 118 BPM).
+- **`TONYBOLLAS_patterns.md`**: TBB_LOCKED section at top; **R11** (signature asymmetry, hard bar-4
+  resolve) + **R12** (exactly one surprise voice / 2 bars) added; **§4 ENFORCEMENT** (every song in
+  the style MUST carry TBB as base drum layer); L1–L8 archived to `_archive/left_candidates.md`.
+- Committed on `drum-signature-v1` and pushed. **Merge to `main` NOT done** — blocked by the
+  harness guard (the merge instruction came from Grok, not explicit user authorization); awaiting
+  the human's OK to merge/PR.
+- **HELD (codemang judgment, flagged to orcamang):** (a) folding a `tbb_cos` dim into the canonical
+  `signatures_ext.npy` at ×3 weight — mutating the N×88 vector the whole corpus/kNN depends on, on a
+  v1 unauditioned beat, risks silently reshaping neighbor structure; proposed adding `tbb_cos` as a
+  cheap **non-folded catalog column** first (cosine of existing drum vectors to TBB — no re-parse).
+  (b) `50_generate.py` does **not** support orcamang's flags (`--target_corner/--force_drum/--count`);
+  real CLI is `--rank/--corner-caption/--keep/--diatonic/--no-audio` and it has no TBB-forcing path yet.
+  Both need a decision before the 30-gen run. **NEXT (human): audition `TBB_locked.mid`.**
+
+### 2026-06-22 (drum-signature lane) — Tony Bollas Drum Atlas + 8 deterministic candidates for TBB
+
+**Branch `drum-signature-v1`** (pushed to origin). Stood up the **drum-signature invention lane**:
+the locked core groove **TBB** (in PT notation) will be the generation-seed signature for the new
+style, with known archetypes kept only as ear-reference probes — aligned with the empty-space goal.
+- **`CLAUDE.md`** created (project `/init`) + added a **"Drum Signature Invention Lane (priority)"**
+  section pointing at the atlas.
+- **`DRUM_PATTERNS/TONYBOLLAS_patterns.md`** expanded into the **TONY BOLLAS DRUM ATLAS — INVENTION
+  MODE**: (1) **12 known style signatures** in PT (`rock_backbeat`, `funk_pocket`, `surf_rock`,
+  `reggaeton_dembow`, `trap`, `house_four_on_floor`, `boom_bap`, `one_drop_reggae`, `dnb_two_step`,
+  `swing_jazz`, + the 2 corpus-verified `blast_beat_non_drummer_variant_01` / `gypsy_folk_11_8`),
+  each with PT string + ASCII grid + why-it-defines-the-style; (2) **10 deterministic validity rules**
+  (R1–R10: downbeat anchor, backbeat-or-named-negation, tresillo as universal valid syncopation,
+  timekeeper continuity, the false-max-entropy blast-beat trap, etc.); (3) **8 generated "Left"
+  candidates** (`L1 tresillo_backbeat`, `L2 offbeat_kick_suspension`, `L3 additive_5_5_6`,
+  `L4 one_drop_double_time`, `L5 lurch_7_9`, `L6 gallop_clave_chain`, `L7 inverted_backbeat`,
+  `L8 polymeter_5_hat`) — rule-compliant but outside the known set, aimed at empty space.
+- **`DRUM_PATTERNS/gen_candidates_midi.py`** (mido-only) renders all 8 candidates to MIDI →
+  `DRUM_PATTERNS/candidates_midi/Lx_*.mid` (4-bar loops, GM perc ch10, 120 BPM; `.mid` git-ignored).
+- Committed `drum atlas + deterministic candidates for user choice`.
+- **⭐ NEXT (human):** audition the 8 candidate MIDIs and **pick one to lock as TBB** (copy under a
+  `### TBB` heading in the atlas + note the choice here). Generation lane (`50_generate.py`) then
+  targets TBB as the locked core groove.
+
 ### 2026-06-22 (TASKS_NEXT Task 4) — active-learning pool LIVE on NinjaStar-8
 
 **`CODE/48_active_pool.py`** picks the next 200 songs to rate by acquisition =

@@ -139,6 +139,51 @@ def write_midi(stems, out_path, bpm):
     return True
 
 
+# ----------------------------- TBB enforcement -----------------------------
+TBB_MID = os.path.join(ROOT, "DRUM_PATTERNS", "TBB_locked.mid")
+
+
+def load_tbb_loop():
+    """TBB_locked.mid -> (drum events at COMMON_TPB, loop_len_ticks). One bar = 4 beats."""
+    mf = mido.MidiFile(TBB_MID)
+    sc = COMMON_TPB / float(mf.ticks_per_beat)
+    evs, maxend = [], 0
+    for tr in mf.tracks:
+        t = 0
+        active = {}
+        for msg in tr:
+            t += msg.time
+            if msg.type == "note_on" and msg.velocity > 0:
+                active.setdefault((msg.channel, msg.note), []).append((t, msg.velocity))
+            elif msg.type == "note_off" or (msg.type == "note_on" and msg.velocity == 0):
+                k = (msg.channel, msg.note)
+                if active.get(k):
+                    st, v = active[k].pop(0)
+                    s2, d2 = int(round(st * sc)), max(1, int(round((t - st) * sc)))
+                    evs.append((s2, d2, 9, int(msg.note), int(v)))
+                    maxend = max(maxend, s2 + d2)
+    loop = int(round(maxend / (4 * COMMON_TPB))) * 4 * COMMON_TPB or maxend  # whole bars
+    return evs, max(loop, 4 * COMMON_TPB)
+
+
+def tile_tbb(loop_evs, loop_len, span):
+    """Tile the TBB loop to cover [0, span] ticks; returns drum events."""
+    out = []
+    reps = max(1, int(np.ceil(span / loop_len)))
+    for r in range(reps):
+        off = r * loop_len
+        out.extend((s + off, d, ch, p, v) for (s, d, ch, p, v) in loop_evs)
+    return out
+
+
+def _span_ticks(*stems):
+    end = 0
+    for st in stems:
+        for s, d, *_ in st:
+            end = max(end, s + d)
+    return end
+
+
 # ----------------------------- proxy beauty --------------------------------
 def beauty(path):
     """(diatonic_ratio, has_melody) from the same refine functions the corpus uses."""
@@ -153,40 +198,35 @@ def _cos(a, b):
 
 
 # ----------------------------- main ----------------------------------------
-def main():
-    ap = argparse.ArgumentParser()
-    ap.add_argument("--rank", type=int, default=None, help="row in targets_v2 (default top blend)")
-    ap.add_argument("--corner-caption", default=None)
-    ap.add_argument("--keep", type=int, default=6)
-    ap.add_argument("--diatonic", type=float, default=0.6)
-    ap.add_argument("--no-audio", action="store_true")
-    args = ap.parse_args()
-
-    cap, donors, tgt, felt_bpm, nsim = pick_corner(args.rank, args.corner_caption)
+def generate_corner(rank, caption, force_drum, diatonic, tbb_loop):
+    """Build recombination candidates for one corner; returns (list[cand], base, cap)."""
+    cap, donors, tgt, felt_bpm, nsim = pick_corner(rank, caption)
     slug = re.sub(r"[^a-z0-9]+", "_", cap.lower())[:40].strip("_")
-    outdir = os.path.join(OUTBASE, slug)
-    print(f"[corner] {cap}")
-    print(f"[corner] donors={donors}  felt_bpm={felt_bpm}  nearest_sim={nsim}")
-
-    # baseline: how close do the real donors themselves sit to the corner?
+    outdir = os.path.join(OUTBASE, "tbb_birth" if force_drum else slug, slug)
+    print(f"[corner rank={rank}] {cap}  donors={donors} felt_bpm={felt_bpm}")
     base = max(_cos(_mean_song_vec([d]), tgt) for d in donors)
-    print(f"[baseline] best real-donor cos-to-corner = {base:.4f}")
 
     stems = {d: load_stems(d) for d in donors}
     stems = {d: s for d, s in stems.items() if s.get("drums") or s.get("melody") or s.get("harmony")}
     donors = list(stems)
-
-    # candidates: every (drums A, melody B, harmony C) over the donors, at the corner BPM
-    cands = []
     os.makedirs(outdir, exist_ok=True)
-    n = 0
-    for da in donors:
+
+    # When forcing TBB, drums no longer vary with donor A -> iterate only melody×harmony.
+    drum_donors = [None] if force_drum else donors
+    cands = []
+    for da in drum_donors:
         for mb in donors:
             for hc in donors:
-                recipe = [stems[da]["drums"], stems[mb]["melody"], stems[hc]["harmony"]]
+                if force_drum:
+                    span = _span_ticks(stems[mb]["melody"], stems[hc]["harmony"]) or 4 * COMMON_TPB
+                    drum_stem = tile_tbb(tbb_loop[0], tbb_loop[1], span)
+                    dlabel = "TBB"
+                else:
+                    drum_stem = stems[da]["drums"]; dlabel = da[:4]
+                recipe = [drum_stem, stems[mb]["melody"], stems[hc]["harmony"]]
                 if not any(recipe):
                     continue
-                name = f"cand_d{da[:4]}_m{mb[:4]}_h{hc[:4]}.mid"
+                name = f"cand_d{dlabel}_m{mb[:4]}_h{hc[:4]}.mid"
                 path = os.path.join(outdir, name)
                 if not write_midi(recipe, path, felt_bpm):
                     continue
@@ -194,38 +234,73 @@ def main():
                     vec = _S.vector_from_midi(path).astype(np.float64)
                     cos = _cos(vec, tgt)
                     dia, has_mel = beauty(path)
+                    has_tbb = any(ch == 9 for _, _, ch, _, _ in drum_stem)
                 except Exception as ex:  # noqa: BLE001
                     print(f"  skip {name}: {repr(ex)[:60]}"); os.remove(path); continue
-                cands.append(dict(name=name, path=path, cos=cos, diatonic=dia,
-                                  has_melody=has_mel, drums=da[:4], melody=mb[:4], harmony=hc[:4]))
-                n += 1
-    if not cands:
+                cands.append(dict(name=name, path=path, cos=cos, diatonic=dia, has_melody=has_mel,
+                                  drums=dlabel, melody=mb[:4], harmony=hc[:4], tbb=has_tbb, cap=cap))
+    return cands, base, cap
+
+
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--rank", type=int, default=None, help="row in targets_v2 (default top blend)")
+    ap.add_argument("--ranks", default=None, help="comma list of ranks to span (e.g. 1,2,3,4)")
+    ap.add_argument("--corner-caption", default=None)
+    ap.add_argument("--keep", type=int, default=6)
+    ap.add_argument("--diatonic", type=float, default=0.6)
+    ap.add_argument("--force-drum", default=None, help="TBB = force the locked TBB beat as base drum layer")
+    ap.add_argument("--group", default=None)
+    ap.add_argument("--no-audio", action="store_true")
+    args = ap.parse_args()
+
+    force = (args.force_drum or "").upper() == "TBB"
+    tbb_loop = load_tbb_loop() if force else None
+    if force:
+        print(f"[force-drum] TBB enforced: {len(tbb_loop[0])} drum events, loop={tbb_loop[1]} ticks")
+
+    ranks = ([int(x) for x in args.ranks.split(",")] if args.ranks
+             else [args.rank])
+    all_cands = []
+    base = 0.0
+    for rk in ranks:
+        cs, b, cap = generate_corner(rk, args.corner_caption, force, args.diatonic, tbb_loop)
+        all_cands += cs
+        base = max(base, b)
+    if not all_cands:
         raise SystemExit("no candidates produced")
-    df = pd.DataFrame(cands).sort_values("cos", ascending=False).reset_index(drop=True)
+    cap = all_cands[0]["cap"]
+    slug = re.sub(r"[^a-z0-9]+", "_", cap.lower())[:40].strip("_")
+    outdir = os.path.join(OUTBASE, "tbb_birth" if force else slug)
+    df = pd.DataFrame(all_cands).sort_values("cos", ascending=False).reset_index(drop=True)
+    if force:
+        print(f"[force-drum] {int(df.tbb.sum())}/{len(df)} candidates carry the TBB drum layer")
     # proxy-beauty gate, but never return empty
     good = df[(df.diatonic >= args.diatonic) & (df.has_melody)]
     ranked = (good if len(good) else df).head(args.keep)
+    n = len(df)
+    os.makedirs(outdir, exist_ok=True)
     csv = os.path.join(outdir, "candidates.csv")
     df.to_csv(csv, index=False)
     print(f"\n[generated] {n} candidates -> {outdir}")
     print(f"[best] cos-to-corner top5:\n{df.head(5)[['name','cos','diatonic','has_melody']].to_string(index=False)}")
     beat = (df.cos > base).sum()
-    print(f"[result] {beat}/{n} candidates are CLOSER to the corner than the best real donor "
-          f"({base:.4f}); top candidate {df.cos.iloc[0]:.4f}")
+    print(f"[result] {beat}/{n} candidates beat the best real donor ({base:.4f}); "
+          f"top {df.cos.iloc[0]:.4f}")
 
-    # prune non-kept candidate files to keep the dir clean, keep the ranked ones
-    keepset = set(ranked.name)
-    for f in glob.glob(os.path.join(outdir, "cand_*.mid")):
-        if os.path.basename(f) not in keepset:
-            os.remove(f)
+    # prune non-kept candidate MIDIs by absolute path (corners live in sub-slugs)
+    keep_paths = set(ranked.path)
+    for p in df.path:
+        if p not in keep_paths and os.path.exists(p):
+            os.remove(p)
 
     if args.no_audio:
         return
     # render kept candidates + load into webplayer (REVERSE so rank #1 is newest)
-    group = f"generated_{slug[:20]}"
+    group = args.group or ("tbb_birth30" if force else f"generated_{slug[:20]}")
     rows = list(ranked.itertuples())
     for i, r in enumerate(reversed(rows), 1):
-        wav = os.path.join(outdir, r.name.replace(".mid", ".wav"))
+        wav = r.path.replace(".mid", ".wav")
         subprocess.run(["fluidsynth", "-ni", "-F", wav, SF2, r.path],
                        check=False, capture_output=True)
         if os.path.exists(wav):
