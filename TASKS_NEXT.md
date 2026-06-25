@@ -87,6 +87,100 @@ catalog). DO NOT touch signatures_ext.npy / knn_cosine.pkl. Append a STATE.md se
 > .venv-linux/bin/python CODE/50_generate.py --rank 1 --keep 3 --enhance chiptune --gate-min-cos 0.7 --group gated_test
 > ```
 > Single-file gate: `.venv-linux/bin/python CODE/50_theory_gate.py --input <mid> --mode chiptune --target_corner "<caption>"`
+>
+> **UPDATE 2026-06-24 — PHRASE-LEVEL recombination (default ON).** The whole-song stem
+> swap kept candidates hugging one donor (donor_sim 0.94–0.98). `CODE/50_generate.py` now
+> splits each donor into bar-aligned **phrases** via a Multi-feature Novelty (LBDM-inspired)
+> boundary detector on the melody — rest/gap + IOI + IOI-change + leap + contour + per-bar
+> harmonic novelty — and re-sequences phrases from DIFFERENT donors per slot (100% symbolic).
+> A `donor_sim` metric + `--novelty-weight` (default 0.5) rank the kept set by
+> `cos_to_corner − w·donor_sim`. Result: kept donor_sim **0.958→0.812** (rank 1) /
+> **0.957→0.874** (rank 2) while staying in the corner. Flags: `--phrase-level` /
+> `--no-phrase-level`, `--n-candidates`, `--min-bars/--max-bars`, `--min-slots/--max-slots`,
+> `--seed`, `--novelty-weight`.
+>
+> **NEW recommended command:**
+> ```bash
+> .venv-linux/bin/python CODE/50_generate.py --rank 1 --keep 6 --phrase-level --enhance chiptune --gate-min-cos 0.7 --group phrase_birth
+> ```
+>
+> **UPDATE 2026-06-24 — "IN THE STYLE OF A LIKED SONG" (`--like-md5`).** New mode in
+> `CODE/50_generate.py`: generate fresh music in the family of a specific liked corpus
+> md5 without copying it. Donor pool = liked song + its nearest 88-D neighbors; target =
+> the liked vector nudged toward the nearest EMPTY direction (`--empty-bias`, default
+> 0.25) so it moves into sparser space; then phrase-level recombination + theory gate.
+> Result on a liked solo-piano seed: kept donor_sim **0.49–0.55** (vs ~0.95 for a remix)
+> = clearly new, same feel. **NOTE:** a single song is a spiky target (candidate cos ~0.5,
+> not ~0.85 like smooth corners) — do NOT use `--gate-min-cos 0.7` here; rely on the
+> quality gate (or `--gate-min-cos ~0.4`).
+>
+> **Style-of-any-liked-song command (coherent — recommended, avoids "jumbled"):**
+> ```bash
+> .venv-linux/bin/python CODE/50_generate.py --like-md5 <MD5> --keep 8 --phrase-level \
+>   --coherent-slots --min-bars 4 --max-bars 8 --min-slots 3 --max-slots 5 \
+>   --empty-bias 0.15 --enhance chiptune --gate-min-score 0.5 --group style_<tag>
+> ```
+> `--coherent-slots` (default ON) makes each slot one REAL excerpt (melody+harmony+drums
+> from the same donor phrase) so chords sit under the melody — fixes the vertical clash
+> that made independent layer-mixing sound jumbled. `--no-coherent-slots` = old max-novelty
+> mode (good for empty-corner hunts, not for "in the style of").
+>
+> **UPDATE 2026-06-25 — COHERENT REMIX (`CODE/51_remix.py`).** Keep one song's full
+> backing (drums + bass + keys/harmony) intact and lay a DIFFERENT song's melody — or a
+> generated / user-supplied one — on top, key-matched + chord-snapped so it sounds like a
+> real layered song (not a stem swap). Backing is kept whole; melody is transposed into
+> the backing's key, snapped per-bar to the active chord (chord tones on strong beats),
+> bar-aligned, lifted above the backing, then run through the theory gate + chiptune/clean
+> enhancement. Generated melodies repeat a 4/8-bar motif (re-snapped to each section's
+> chords) so they sound intentional. Tested on the liked `15c0ecfc…` pattern → 6/7 passed
+> → webplayer group `coherent_remix`.
+>
+> **Coherent-remix commands:**
+> ```bash
+> # new melody over a song's groove:
+> .venv-linux/bin/python CODE/51_remix.py --pattern-from <MD5> --new-melody --variants 6 --enhance chiptune --group coherent_remix
+> # drums/bass/keys from A, melody from B (keep real timbres):
+> .venv-linux/bin/python CODE/51_remix.py --pattern-from <A> --melody-from <B> --enhance clean
+> # your own topline over a corpus groove:
+> .venv-linux/bin/python CODE/51_remix.py --pattern-from <A> --user-melody mytune.mid
+> ```
+>
+> **UPDATE 2026-06-25 — ADVANCED REMIX (`--advanced`).** Adds an EIS reharmonization pass
+> (`music_rules` engine) on top of the coherent mix and renders a **3-way comparison**:
+> `#0 ORIGINAL base` (untouched pattern) / `#n 1ST-PASS` (pattern+melody) / `#n ADVANCED`.
+> ADVANCED = diatonic 9th/extended chords on every bar (`eis.chords`), tritone subs on
+> dominants, and **strict EIS voice leading** (`eis.voice_leading.voice_lead`) re-pitching
+> the comping to the nearest smooth voice-led tone (keeps density/groove). On the liked
+> `15c0ecfc…`: voice leading **2.15 vs 11.46** semitones/change (~5× smoother, 3/3) →
+> webplayer group `coherent_remix_test` (7 tracks). The diatonic gate `quality_score` dips
+> ~0.04 because richer/chromatic harmony is less diatonic by design (it measures key-fit,
+> not sophistication — judge by ear / VL metric).
+>
+> **Advanced-remix command (any song):**
+> ```bash
+> .venv-linux/bin/python CODE/51_remix.py --pattern-from <MD5> --new-melody --variants 5 \
+>     --advanced --reharm all --compare-top 3 --group coherent_remix_test
+> # (or --melody-from <B> / --user-melody f.mid for the topline; --compare-top N = how many
+> #  best 1st-pass mixes get an advanced version. Needs music_rules; auto-disables if absent.)
+> ```
+>
+> **UPDATE 2026-06-25 (later) — full reharm toolbox + per-technique A/B.** `--reharm` now
+> takes any of: `ext` (9th/extended chords), `sub` (tritone sub on dominants), `dsub`
+> (diatonic functional sub I↔vi/iii, IV↔ii), `iiv` (ii–V insertion, splits a V bar), `nct`
+> (melodic passing/neighbour tones via `eis.nct`); `all` = every technique. Harmony is a
+> segment timeline so subs can split bars. Strict EIS `voice_lead` is always applied. New
+> `--reharm-compare` renders ONE advanced version per technique on the best melody so you can
+> A/B them in one group. Demo groups on the liked song: `demo_reharm` (per-technique, 8),
+> `demo_melody_sources` (corpus/user/generated, 5), `demo_enhance` (chiptune/clean/arp, 3),
+> `coherent_remix_test` (3-way, 7).
+> ```bash
+> # hear each reharmonization technique isolated, A/B:
+> .venv-linux/bin/python CODE/51_remix.py --pattern-from <MD5> --new-melody --variants 4 \
+>     --advanced --reharm-compare --compare-top 1 --group demo_reharm
+> # pick specific techniques:
+> .venv-linux/bin/python CODE/51_remix.py --pattern-from <MD5> --melody-from <B> \
+>     --advanced --reharm ext,dsub,nct --compare-top 3 --group my_remix
+> ```
 
 ```PROMPT
 Root: /mnt/2FAST/MIDIS_ALL_REAL. Read STATE.md and TASKS_NEXT.md "Shared context" first.

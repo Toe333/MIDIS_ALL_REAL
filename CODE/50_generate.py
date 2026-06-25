@@ -100,6 +100,89 @@ def _mean_song_vec(md5s):
     return v / (np.linalg.norm(v) + 1e-12)
 
 
+# ----------------------- "in the style of a liked song" --------------------
+_EXT_CACHE = None
+
+
+def _load_ext():
+    """Load the N×88 matrix + md5 row index once (cached)."""
+    global _EXT_CACHE
+    if _EXT_CACHE is None:
+        ext = np.load(os.path.join(ROOT, "SIGNATURES_DATA", "signatures_ext.npy"))
+        idx = [l.strip() for l in open(os.path.join(ROOT, "SIGNATURES_DATA", "signatures_md5.txt"))
+               if l.strip()]
+        pos = {m: i for i, m in enumerate(idx)}
+        norms = np.linalg.norm(ext, axis=1).astype(np.float64) + 1e-12
+        _EXT_CACHE = (ext, idx, pos, norms)
+    return _EXT_CACHE
+
+
+def nearest_neighbors(md5, k=2, lo=0.50, hi=0.9990):
+    """Top-k cosine neighbors of md5 in the 88-D space, skipping the song itself
+    and near-duplicate arrangements (cos > hi). Returns [(md5, cos), ...]."""
+    ext, idx, pos, norms = _load_ext()
+    if md5 not in pos:
+        raise SystemExit(f"{md5} not in signatures_md5.txt")
+    v = ext[pos[md5]].astype(np.float64)
+    sims = (ext @ v) / (norms * (np.linalg.norm(v) + 1e-12))
+    out = []
+    for j in np.argsort(-sims):
+        m = idx[j]
+        if m == md5:
+            continue
+        s = float(sims[j])
+        if s > hi:                 # near-identical arrangement of the same song
+            continue
+        if s < lo:
+            break
+        out.append((m, round(s, 4)))
+        if len(out) >= k:
+            break
+    return out
+
+
+def _felt_bpm_for(md5, caption=None):
+    if caption:
+        b = _bpm_from_caption(caption)
+        if b and b != 120.0:
+            return b
+    try:
+        cat = pd.read_parquet(os.path.join(ROOT, "catalog", "metadata.parquet"),
+                              columns=["md5", "felt_bpm"])
+        r = cat[cat.md5 == md5]
+        if len(r) and np.isfinite(r.felt_bpm.iloc[0]):
+            return float(r.felt_bpm.iloc[0])
+    except Exception:  # noqa: BLE001
+        pass
+    return _bpm_from_caption(caption or "")
+
+
+def pick_like(md5, n_neighbors=2, empty_bias=0.25, caption=None):
+    """Build a generation spec from a LIKED song: donor pool = {liked + its nearest
+    neighbors}; target = the liked song's own 88-D vector nudged a little toward the
+    nearest EMPTY direction (away from the neighbor crowd, into sparser space) so we
+    don't just remix it. Returns the same tuple shape as pick_corner()."""
+    ext, idx, pos, _ = _load_ext()
+    seed = ext[pos[md5]].astype(np.float64)
+    seed = seed / (np.linalg.norm(seed) + 1e-12)
+    nbrs = nearest_neighbors(md5, n_neighbors)
+    donors = [md5] + [m for m, _ in nbrs]
+    tgt = seed.copy()
+    if nbrs and empty_bias > 0:
+        nbr_mean = np.mean([ext[pos[m]].astype(np.float64) for m, _ in nbrs], axis=0)
+        nbr_mean = nbr_mean / (np.linalg.norm(nbr_mean) + 1e-12)
+        direction = seed - nbr_mean        # points away from the crowd = toward emptier space
+        nd = np.linalg.norm(direction)
+        if nd > 1e-9:
+            tgt = seed + empty_bias * (direction / nd)
+    tgt = tgt / (np.linalg.norm(tgt) + 1e-12)
+    cap = caption or f"style of {md5[:8]}"
+    nsim = nbrs[0][1] if nbrs else 1.0
+    print(f"[like] seed={md5[:8]} neighbors={[(m[:8], s) for m, s in nbrs]} "
+          f"empty_bias={empty_bias} -> target cos-to-seed={_cos(tgt, seed):.4f}")
+    return cap, donors, tgt.astype(np.float64), _felt_bpm_for(md5, caption), nsim
+
+
 # ----------------------------- stems ---------------------------------------
 def load_stems(md5):
     """Parse a donor and split into role stems, rescaled to COMMON_TPB ticks.
@@ -192,6 +275,229 @@ def _span_ticks(*stems):
     return end
 
 
+# ====================== phrase-level recombination =========================
+# Multi-feature Novelty boundary detector (LBDM-inspired) + cross-donor phrase
+# shuffling. The whole-song recombiner keeps each candidate hugging one donor
+# per role; splitting every donor into bar-aligned PHRASES (boundaries found on
+# the melody, propagated to drums+harmony) and re-sequencing phrases from
+# DIFFERENT donors per slot pushes candidates off any single donor while staying
+# inside the corner. Everything below is 100% symbolic — no audio is rendered.
+BAR_BEATS = 4                              # assume 4/4 phrase grid (corpus-dominant)
+BAR_TICKS = BAR_BEATS * COMMON_TPB         # 1920 ticks/bar at COMMON_TPB
+
+# novelty weights: rest + harmonic changes are the strongest phrase cues, then
+# rhythm (IOI + its change) and melodic leap/contour (rhythm is project priority #1).
+NOV_W = {"rest": 1.0, "ioi": 0.7, "ioi_chg": 0.6, "leap": 0.5, "contour": 0.4, "harm": 1.0}
+
+
+def _mono_melody(mel):
+    """Collapse a melody stem to one (onset, pitch, dur) per onset (top note)."""
+    by = {}
+    for s, d, ch, p, v in mel:
+        if s not in by or p > by[s][1]:
+            by[s] = (s, p, d)
+    return [by[k] for k in sorted(by)]
+
+
+def _bar_chroma(events, total_bars):
+    ch = np.zeros((total_bars, 12))
+    for s, d, c, p, v in events:
+        if c == 9:
+            continue
+        b = int(s // BAR_TICKS)
+        if 0 <= b < total_bars:
+            ch[b, p % 12] += d
+    return ch
+
+
+def _harm_bar_novelty(events, total_bars):
+    """Cosine distance between successive bars' chroma -> harmonic-change saliency
+    indexed by bar boundary (sal[b] = change crossing into bar b)."""
+    sal = np.zeros(total_bars + 1)
+    if not events or total_bars < 2:
+        return sal
+    chroma = _bar_chroma(events, total_bars)
+    for b in range(1, total_bars):
+        a, c = chroma[b - 1], chroma[b]
+        na, nc = np.linalg.norm(a), np.linalg.norm(c)
+        if na > 0 and nc > 0:
+            sal[b] = 1.0 - float(a @ c / (na * nc))
+    return sal
+
+
+def detect_boundaries(stems, min_bars=2, max_bars=8, weights=None):
+    """Multi-feature Novelty (LBDM-inspired) phrase boundaries on the MELODY stem,
+    snapped to bar lines and propagated to all roles. Returns bar cut indices
+    [0, ..., total_bars] with every phrase length in [min_bars, max_bars]."""
+    w = weights or NOV_W
+    mel = stems.get("melody") or []
+    harm = stems.get("harmony") or []
+    span = _span_ticks(stems.get("melody", []), stems.get("harmony", []),
+                       stems.get("drums", []))
+    total_bars = max(1, int(np.ceil(span / BAR_TICKS)))
+    if total_bars <= min_bars:
+        return [0, total_bars]
+
+    bar_sal = np.zeros(total_bars + 1)
+    seq = _mono_melody(mel)
+    if len(seq) >= 3:
+        onsets = np.array([s for s, _, _ in seq], dtype=np.float64)
+        pitches = np.array([p for _, p, _ in seq], dtype=np.float64)
+        durs = np.array([d for _, _, d in seq], dtype=np.float64)
+        ends = onsets + durs
+        ioi = np.diff(onsets)                       # len n-1, transition t = t->t+1
+        rest = np.maximum(0.0, onsets[1:] - ends[:-1])
+        interval = np.diff(pitches)
+
+        def _doc(a, b):                              # LBDM degree-of-change in [0,1]
+            s = a + b
+            return np.where(s > 0, np.abs(a - b) / (s + 1e-9), 0.0)
+
+        nT = len(ioi)
+        rest_s = rest / (rest.max() + 1e-9)
+        ioi_s = ioi / (ioi.max() + 1e-9)
+        ioi_chg = np.zeros(nT)
+        if nT > 1:
+            ioi_chg[1:] = _doc(ioi[:-1], ioi[1:])
+        leap_s = np.abs(interval) / (np.abs(interval).max() + 1e-9)
+        contour = np.zeros(nT)
+        sgn = np.sign(interval)
+        if nT > 1:
+            contour[1:] = (sgn[1:] * sgn[:-1] < 0).astype(float)
+        nov = (w["rest"] * rest_s + w["ioi"] * ioi_s + w["ioi_chg"] * ioi_chg +
+               w["leap"] * leap_s + w["contour"] * contour)
+        # a cut sits BEFORE note t+1, i.e. at its onset -> nearest bar line
+        for nv, ct in zip(nov, onsets[1:]):
+            b = int(round(ct / BAR_TICKS))
+            if 0 < b <= total_bars:
+                bar_sal[b] += nv
+
+    bar_sal += w["harm"] * _harm_bar_novelty(harm + mel, total_bars)
+
+    # greedy: walk forward, cut at the most-salient bar in [min,max] ahead,
+    # always leaving >= min_bars for the tail; yields variable phrase lengths.
+    cuts = [0]
+    last = 0
+    while total_bars - last > max_bars:
+        lo = last + min_bars
+        hi = min(last + max_bars, total_bars - min_bars)
+        if hi < lo:
+            nxt = last + max_bars
+        else:
+            seg = bar_sal[lo:hi + 1]
+            nxt = lo + int(np.argmax(seg)) if seg.max() > 0 else last + max_bars
+        cuts.append(nxt)
+        last = nxt
+    cuts.append(total_bars)
+    return cuts
+
+
+def _est_shift(stems):
+    """Minimal semitone shift so the most-common tonal pitch-class lands on C."""
+    hist = np.zeros(12)
+    for role in ("melody", "harmony"):
+        for s, d, ch, p, v in stems.get(role, []):
+            hist[p % 12] += d
+    if hist.sum() <= 0:
+        return 0
+    root = int(np.argmax(hist))
+    shift = (-root) % 12
+    return shift - 12 if shift > 6 else shift
+
+
+def _transpose_tonal(stems, shift):
+    if not shift:
+        return stems
+    out = {}
+    for role, evs in stems.items():
+        if role == "drums":
+            out[role] = evs
+        else:
+            out[role] = [(s, d, ch, max(0, min(127, p + shift)), v)
+                         for (s, d, ch, p, v) in evs]
+    return out
+
+
+def slice_phrase(events, bar_a, bar_b):
+    """Events whose ONSET is in [bar_a, bar_b), shifted to 0 and clipped so no
+    note bleeds past the phrase end (clean joins)."""
+    t0, t1 = bar_a * BAR_TICKS, bar_b * BAR_TICKS
+    out = []
+    for s, d, ch, p, v in events:
+        if t0 <= s < t1:
+            nd = min(d, t1 - s)
+            if nd > 0:
+                out.append((s - t0, nd, ch, p, v))
+    return out
+
+
+def load_phrases(md5, min_bars=2, max_bars=8, align_key=True):
+    """Split a donor into bar-aligned phrases. Boundaries are detected on the
+    donor's own melody and propagated to drums+harmony. Returns list of dicts
+    {melody, drums, harmony, bars, donor} with events shifted to phrase-start."""
+    stems = load_stems(md5)
+    if not stems:
+        return []
+    if align_key:
+        stems = _transpose_tonal(stems, _est_shift(stems))
+    cuts = detect_boundaries(stems, min_bars, max_bars)
+    phrases = []
+    for a, b in zip(cuts[:-1], cuts[1:]):
+        ph = {role: slice_phrase(stems.get(role, []), a, b)
+              for role in ("melody", "drums", "harmony")}
+        if ph["melody"] or ph["harmony"] or ph["drums"]:
+            ph["bars"] = int(b - a)
+            ph["donor"] = md5[:4]
+            phrases.append(ph)
+    return phrases
+
+
+def fit_to_bars(events, src_bars, dst_bars):
+    """Tile/truncate phrase events (start at 0) to exactly dst_bars of length."""
+    if not events:
+        return []
+    dst_ticks = dst_bars * BAR_TICKS
+    src_ticks = max(src_bars, 1) * BAR_TICKS
+    out = []
+    reps = int(np.ceil(dst_ticks / src_ticks))
+    for r in range(reps):
+        off = r * src_ticks
+        for s, d, ch, p, v in events:
+            ns = s + off
+            if ns >= dst_ticks:
+                continue
+            nd = min(d, dst_ticks - ns)
+            if nd > 0:
+                out.append((ns, nd, ch, p, v))
+    return out
+
+
+def build_phrase_song(slots, force_drum=False, tbb_loop=None):
+    """Concatenate phrase slots end-to-end on a shared bar grid. Each slot's
+    length is driven by its MELODY phrase; harmony/drums are length-matched to it.
+    slots: list of (mel_ph, harm_ph, drum_ph). Returns [drums, melody, harmony]."""
+    drums, melody, harmony = [], [], []
+    bar_off = 0
+    for mp, hp, dp in slots:
+        L = mp["bars"]
+        off = bar_off * BAR_TICKS
+        for s, d, ch, p, v in mp["melody"]:
+            melody.append((s + off, d, ch, p, v))
+        if hp is not None:
+            for s, d, ch, p, v in fit_to_bars(hp["harmony"], hp["bars"], L):
+                harmony.append((s + off, d, ch, p, v))
+        if force_drum and tbb_loop is not None:
+            seg = tile_tbb(tbb_loop[0], tbb_loop[1], L * BAR_TICKS)
+            for s, d, ch, p, v in seg:
+                if s < L * BAR_TICKS:
+                    drums.append((s + off, d, ch, p, v))
+        elif dp is not None:
+            for s, d, ch, p, v in fit_to_bars(dp["drums"], dp["bars"], L):
+                drums.append((s + off, d, ch, p, v))
+        bar_off += L
+    return [drums, melody, harmony]
+
+
 # ----------------------------- proxy beauty --------------------------------
 def beauty(path):
     """(diatonic_ratio, has_melody) from the same refine functions the corpus uses."""
@@ -229,22 +535,24 @@ def anchor_tbb(tgt):
     return t / (np.linalg.norm(t) + 1e-12)
 
 
-def generate_corner(rank, caption, force_drum, diatonic, tbb_loop, target_mode="corner"):
-    """Build recombination candidates for one corner; returns (list[cand], base, cap)."""
-    cap, donors, tgt, felt_bpm, nsim = pick_corner(rank, caption)
-    if target_mode == "tbb_anchored":
-        tgt = anchor_tbb(tgt)
-    slug = re.sub(r"[^a-z0-9]+", "_", cap.lower())[:40].strip("_")
-    outdir = os.path.join(OUTBASE, "tbb_birth" if force_drum else slug, slug)
-    print(f"[corner rank={rank}] {cap}  donors={donors} felt_bpm={felt_bpm}")
-    base = max(_cos(_mean_song_vec([d]), tgt) for d in donors)
+def _score_candidate(path, drum_stem, tgt, donor_vecs, extra):
+    """Embed a written candidate and score it: cosine-to-corner, proxy beauty, and
+    donor_sim = max cosine to any single donor (lower = more genuinely new)."""
+    vec = _S.vector_from_midi(path).astype(np.float64)
+    cos = _cos(vec, tgt)
+    dia, has_mel = beauty(path)
+    has_tbb = any(ch == 9 for _, _, ch, _, _ in drum_stem)
+    dsim = max((_cos(vec, dv) for dv in donor_vecs.values()), default=0.0)
+    row = dict(path=path, name=os.path.basename(path), cos=round(cos, 4),
+               diatonic=dia, has_melody=has_mel, tbb=has_tbb,
+               donor_sim=round(float(dsim), 4))
+    row.update(extra)
+    return row
 
-    stems = {d: load_stems(d) for d in donors}
-    stems = {d: s for d, s in stems.items() if s.get("drums") or s.get("melody") or s.get("harmony")}
-    donors = list(stems)
-    os.makedirs(outdir, exist_ok=True)
 
-    # When forcing TBB, drums no longer vary with donor A -> iterate only melody×harmony.
+def _whole_song_cands(donors, stems, tgt, donor_vecs, felt_bpm, outdir, force_drum,
+                      tbb_loop, cap):
+    """Original whole-song stem recombination: {drums A, melody B, harmony C}."""
     drum_donors = [None] if force_drum else donors
     cands = []
     for da in drum_donors:
@@ -264,14 +572,109 @@ def generate_corner(rank, caption, force_drum, diatonic, tbb_loop, target_mode="
                 if not write_midi(recipe, path, felt_bpm):
                     continue
                 try:
-                    vec = _S.vector_from_midi(path).astype(np.float64)
-                    cos = _cos(vec, tgt)
-                    dia, has_mel = beauty(path)
-                    has_tbb = any(ch == 9 for _, _, ch, _, _ in drum_stem)
+                    row = _score_candidate(path, drum_stem, tgt, donor_vecs,
+                                           dict(drums=dlabel, melody=mb[:4], harmony=hc[:4],
+                                                mode="whole", cap=cap))
                 except Exception as ex:  # noqa: BLE001
                     print(f"  skip {name}: {repr(ex)[:60]}"); os.remove(path); continue
-                cands.append(dict(name=name, path=path, cos=cos, diatonic=dia, has_melody=has_mel,
-                                  drums=dlabel, melody=mb[:4], harmony=hc[:4], tbb=has_tbb, cap=cap))
+                cands.append(row)
+    return cands
+
+
+def _phrase_cands(donors, tgt, donor_vecs, felt_bpm, outdir, force_drum, tbb_loop,
+                  cap, n_candidates, min_bars, max_bars, min_slots, max_slots, seed,
+                  coherent=True):
+    """Phrase-level recombination: split donors into bar-aligned phrases (boundaries
+    found on melody, propagated to drums+harmony), then re-sequence whole phrases.
+
+    coherent=True  : each slot is one REAL excerpt — melody+harmony(+drums) from the
+                     SAME donor phrase — so chords sit under the melody (no vertical
+                     clash). Novelty comes from re-ordering phrases across donors.
+    coherent=False : melody / harmony / drums are sampled INDEPENDENTLY per slot
+                     (maximal novelty, but can sound jumbled — used for corner hunts)."""
+    donor_phrases = {d: load_phrases(d, min_bars, max_bars) for d in donors}
+    donor_phrases = {d: ph for d, ph in donor_phrases.items() if ph}
+    if not donor_phrases:
+        print("  [phrase] no phrases extracted; falling back to whole-song")
+        return []
+    mel_bank = [ph for d in donor_phrases for ph in donor_phrases[d] if ph["melody"]]
+    harm_bank = [ph for d in donor_phrases for ph in donor_phrases[d] if ph["harmony"]]
+    drum_bank = [ph for d in donor_phrases for ph in donor_phrases[d] if ph["drums"]]
+    if not mel_bank:
+        print("  [phrase] no melodic phrases; falling back to whole-song")
+        return []
+    nph = {d: len(ph) for d, ph in donor_phrases.items()}
+    print(f"  [phrase] donors->phrases {nph}  banks: mel={len(mel_bank)} "
+          f"harm={len(harm_bank)} drum={len(drum_bank)}  coherent={coherent}")
+
+    rng = np.random.default_rng(seed)
+    cands = []
+    for ci in range(n_candidates):
+        n_slots = int(rng.integers(min_slots, max_slots + 1))
+        slots, mel_ds = [], []
+        for _ in range(n_slots):
+            if coherent:
+                # one real excerpt: melody + its own harmony + its own drums
+                mp = mel_bank[int(rng.integers(len(mel_bank)))]
+                hp = mp if mp["harmony"] else (
+                    harm_bank[int(rng.integers(len(harm_bank)))] if harm_bank else None)
+                dp = mp if mp["drums"] else (
+                    drum_bank[int(rng.integers(len(drum_bank)))] if drum_bank else None)
+            else:
+                mp = mel_bank[int(rng.integers(len(mel_bank)))]
+                hp = harm_bank[int(rng.integers(len(harm_bank)))] if harm_bank else None
+                dp = drum_bank[int(rng.integers(len(drum_bank)))] if drum_bank else None
+            slots.append((mp, hp, dp))
+            mel_ds.append(mp["donor"])
+        recipe = build_phrase_song(slots, force_drum=force_drum, tbb_loop=tbb_loop)
+        if not any(recipe):
+            continue
+        donor_tag = "".join(sorted(set(mel_ds)))[:12]
+        name = f"phr_{ci:02d}_n{n_slots}_m{donor_tag}.mid"
+        path = os.path.join(outdir, name)
+        if not write_midi(recipe, path, felt_bpm):
+            continue
+        try:
+            row = _score_candidate(path, recipe[0], tgt, donor_vecs,
+                                   dict(drums="TBB" if force_drum else "mix",
+                                        melody=donor_tag, harmony="mix", mode="phrase",
+                                        n_slots=n_slots, n_mel_donors=len(set(mel_ds)),
+                                        cap=cap))
+        except Exception as ex:  # noqa: BLE001
+            print(f"  skip {name}: {repr(ex)[:60]}"); os.remove(path); continue
+        cands.append(row)
+    return cands
+
+
+def generate_corner(rank, caption, force_drum, diatonic, tbb_loop, target_mode="corner",
+                    phrase_level=True, n_candidates=48, min_bars=2, max_bars=8,
+                    min_slots=4, max_slots=8, seed=0, spec=None, coherent=True):
+    """Build recombination candidates for one corner (or a `spec` from pick_like);
+    returns (cands, base, cap, tgt)."""
+    cap, donors, tgt, felt_bpm, nsim = spec if spec is not None else pick_corner(rank, caption)
+    if target_mode == "tbb_anchored":
+        tgt = anchor_tbb(tgt)
+    slug = re.sub(r"[^a-z0-9]+", "_", cap.lower())[:40].strip("_")
+    outdir = os.path.join(OUTBASE, "tbb_birth" if force_drum else slug, slug)
+    print(f"[corner rank={rank}] {cap}  donors={donors} felt_bpm={felt_bpm} "
+          f"mode={'phrase' if phrase_level else 'whole'}")
+    donor_vecs = {d: _mean_song_vec([d]) for d in donors}
+    base = max(_cos(donor_vecs[d], tgt) for d in donors)
+
+    stems = {d: load_stems(d) for d in donors}
+    stems = {d: s for d, s in stems.items() if s.get("drums") or s.get("melody") or s.get("harmony")}
+    donors = list(stems)
+    donor_vecs = {d: donor_vecs[d] for d in donors}
+    os.makedirs(outdir, exist_ok=True)
+
+    cands = []
+    if phrase_level:
+        cands = _phrase_cands(donors, tgt, donor_vecs, felt_bpm, outdir, force_drum,
+                              tbb_loop, cap, n_candidates, min_bars, max_bars,
+                              min_slots, max_slots, seed, coherent=coherent)
+    if not cands:   # whole-song mode, or phrase mode produced nothing
+        cands = _whole_song_cands(donors, stems, tgt, donor_vecs, felt_bpm, outdir,
+                                  force_drum, tbb_loop, cap)
     return cands, base, cap, tgt
 
 
@@ -310,12 +713,41 @@ def main():
     ap.add_argument("--rank", type=int, default=None, help="row in targets_v2 (default top blend)")
     ap.add_argument("--ranks", default=None, help="comma list of ranks to span (e.g. 1,2,3,4)")
     ap.add_argument("--corner-caption", default=None)
+    ap.add_argument("--like-md5", default=None,
+                    help="generate NEW music in the STYLE of this liked corpus md5: donor "
+                         "pool = liked song + its nearest 88-D neighbors; target = the liked "
+                         "vector nudged toward the nearest empty direction (so it's not a remix)")
+    ap.add_argument("--like-neighbors", type=int, default=2,
+                    help="how many nearest neighbors to add to the donor pool (default 2)")
+    ap.add_argument("--empty-bias", type=float, default=0.25,
+                    help="0..1 how far to push the target away from the donor crowd into "
+                         "sparser space (0 = exact style of the liked song)")
+    ap.add_argument("--like-caption", default=None, help="optional caption for the liked seed")
     ap.add_argument("--keep", type=int, default=6)
     ap.add_argument("--diatonic", type=float, default=0.6)
     ap.add_argument("--force-drum", default=None, help="TBB = force the locked TBB beat as base drum layer")
     ap.add_argument("--target", default="corner", choices=["corner", "tbb_anchored"],
                     help="tbb_anchored = score vs corner pitch/melody/harmony + TBB rhythm/groove")
     ap.add_argument("--group", default=None)
+    ap.add_argument("--phrase-level", action=argparse.BooleanOptionalAction, default=True,
+                    help="phrase-level cross-donor recombination (default on); "
+                         "--no-phrase-level reverts to whole-song stem swap")
+    ap.add_argument("--n-candidates", type=int, default=48,
+                    help="phrase-mode: number of phrase-shuffled candidates to build")
+    ap.add_argument("--min-bars", type=int, default=2, help="phrase-mode: min phrase length (bars)")
+    ap.add_argument("--max-bars", type=int, default=8, help="phrase-mode: max phrase length (bars)")
+    ap.add_argument("--min-slots", type=int, default=4, help="phrase-mode: min phrases per candidate")
+    ap.add_argument("--max-slots", type=int, default=8, help="phrase-mode: max phrases per candidate")
+    ap.add_argument("--seed", type=int, default=0, help="phrase-mode: RNG seed for sampling")
+    ap.add_argument("--coherent-slots", action=argparse.BooleanOptionalAction, default=True,
+                    help="each slot = one real excerpt (melody+harmony+drums from the SAME "
+                         "donor phrase) so chords sit under the melody (default on; avoids "
+                         "the 'jumbled' vertical clash). --no-coherent-slots = independent "
+                         "layer sampling (max novelty, for empty-corner hunts)")
+    ap.add_argument("--novelty-weight", type=float, default=0.5,
+                    help="kept set is ranked by cos_to_corner - w*donor_sim, so we keep "
+                         "candidates that sit IN the corner but AWAY from any single donor "
+                         "(0 = pure corner-cosine, the old behavior)")
     ap.add_argument("--no-audio", action="store_true")
     ap.add_argument("--enhance", default="off", choices=["off", "chiptune", "arp", "clean"],
                     help="post-process kept candidates through CODE/50_theory_gate.py "
@@ -330,35 +762,66 @@ def main():
     if force:
         print(f"[force-drum] TBB enforced: {len(tbb_loop[0])} drum events, loop={tbb_loop[1]} ticks")
 
-    ranks = ([int(x) for x in args.ranks.split(",")] if args.ranks
-             else [args.rank])
     all_cands = []
     base = 0.0
     tgt = None
-    for rk in ranks:
-        cs, b, cap, tgt = generate_corner(rk, args.corner_caption, force, args.diatonic, tbb_loop, args.target)
+    if args.like_md5:
+        spec = pick_like(args.like_md5, args.like_neighbors, args.empty_bias, args.like_caption)
+        cs, b, cap, tgt = generate_corner(
+            None, None, force, args.diatonic, tbb_loop, args.target,
+            phrase_level=args.phrase_level, n_candidates=args.n_candidates,
+            min_bars=args.min_bars, max_bars=args.max_bars,
+            min_slots=args.min_slots, max_slots=args.max_slots, seed=args.seed, spec=spec,
+            coherent=args.coherent_slots)
         all_cands += cs
         base = max(base, b)
+    else:
+        ranks = ([int(x) for x in args.ranks.split(",")] if args.ranks else [args.rank])
+        for rk in ranks:
+            cs, b, cap, tgt = generate_corner(
+                rk, args.corner_caption, force, args.diatonic, tbb_loop, args.target,
+                phrase_level=args.phrase_level, n_candidates=args.n_candidates,
+                min_bars=args.min_bars, max_bars=args.max_bars,
+                min_slots=args.min_slots, max_slots=args.max_slots, seed=args.seed,
+                coherent=args.coherent_slots)
+            all_cands += cs
+            base = max(base, b)
     if not all_cands:
         raise SystemExit("no candidates produced")
     cap = all_cands[0]["cap"]
     slug = re.sub(r"[^a-z0-9]+", "_", cap.lower())[:40].strip("_")
     outdir = os.path.join(OUTBASE, "tbb_birth" if force else slug)
     df = pd.DataFrame(all_cands).sort_values("cos", ascending=False).reset_index(drop=True)
+    # corner-novelty objective: close to the corner, far from any single donor
+    if "donor_sim" in df.columns:
+        df["novelty_score"] = (df.cos - args.novelty_weight * df.donor_sim).round(4)
+    else:
+        df["novelty_score"] = df.cos
     if force:
         print(f"[force-drum] {int(df.tbb.sum())}/{len(df)} candidates carry the TBB drum layer")
-    # proxy-beauty gate, but never return empty
+    # proxy-beauty gate, but never return empty; KEEP by the novelty objective
     good = df[(df.diatonic >= args.diatonic) & (df.has_melody)]
-    ranked = (good if len(good) else df).head(args.keep)
+    ranked = (good if len(good) else df).sort_values(
+        "novelty_score", ascending=False).head(args.keep)
     n = len(df)
     os.makedirs(outdir, exist_ok=True)
     csv = os.path.join(outdir, "candidates.csv")
     df.to_csv(csv, index=False)
     print(f"\n[generated] {n} candidates -> {outdir}")
-    print(f"[best] cos-to-corner top5:\n{df.head(5)[['name','cos','diatonic','has_melody']].to_string(index=False)}")
+    cols = [c for c in ["name", "cos", "donor_sim", "novelty_score", "diatonic", "has_melody"]
+            if c in df.columns]
+    print(f"[best] cos-to-corner top5:\n{df.head(5)[cols].to_string(index=False)}")
+    print(f"[kept] top {len(ranked)} by corner-novelty (cos - {args.novelty_weight}*donor_sim):\n"
+          f"{ranked[cols].to_string(index=False)}")
     beat = (df.cos > base).sum()
     print(f"[result] {beat}/{n} candidates beat the best real donor ({base:.4f}); "
           f"top {df.cos.iloc[0]:.4f}")
+    if "donor_sim" in df.columns:
+        kept_ds = ranked["donor_sim"]
+        print(f"[novelty] donor_sim (max cosine to ANY single donor; lower=newer): "
+              f"all mean={df.donor_sim.mean():.4f} min={df.donor_sim.min():.4f} | "
+              f"kept mean={kept_ds.mean():.4f} min={kept_ds.min():.4f}  "
+              f"(nearest real donor↔corner baseline cos={base:.4f})")
 
     # prune non-kept candidate MIDIs by absolute path (corners live in sub-slugs)
     keep_paths = set(ranked.path)
@@ -380,7 +843,8 @@ def main():
 
     if args.no_audio:
         return
-    group = args.group or ("tbb_birth30" if force else f"generated_{slug[:20]}")
+    group = args.group or (f"style_{args.like_md5[:8]}" if args.like_md5
+                           else "tbb_birth30" if force else f"generated_{slug[:20]}")
 
     if enhanced_rows is not None:
         # render ENHANCED passing files (fallback to best-quality if none passed)

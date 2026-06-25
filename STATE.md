@@ -464,6 +464,155 @@ next approved pass.
 
 ## SESSION LOG (append-only, newest first)
 
+### 2026-06-25 • Coherent remix — backing from one song + melody from another/new (`CODE/51_remix.py`) ✓
+- **New script `CODE/51_remix.py`**: keep one song's FULL backing (drums + bass +
+  keys/harmony groove) intact and lay a key-matched, chord-fitted melody on top —
+  layered like a real song, not a stem-swap Frankenstein. Reuses `50_generate`
+  (stems/write/fit/embed), `50_theory_gate` (grade+chiptune), `49_sig_one` (parser),
+  `25_harmony_refine` (chord templates).
+- **Coherence pipeline:** (1) pattern = donor's drums + harmony (everything non-melody),
+  kept WHOLE; (2) detect pattern key (Krumhansl) + per-bar **chord grid** (carries the
+  last chord over empty bars); (3) melody is transposed into the pattern key, **snapped
+  per-bar to the active chord on strong beats / scale on weak beats** (consonance +
+  voice-leading), bar-aligned/tiled so phrases line up, and octave-lifted above the
+  backing; (4) full **theory gate + chiptune/clean enhancement**.
+- **Melody sources (mix in one run):** `--melody-from A,B,…` (corpus melodies),
+  `--new-melody --variants N` (generated), `--user-melody f.mid,…` (bring your own).
+- **Melody generator** = ONE chord-aware motif of `phrase_bars` (4 or 8) **repeated**
+  across the song, re-snapped to each section's chords — motif repetition is what makes
+  it sound intentional instead of a through-composed random walk.
+- **Test (pattern = liked `15c0ecfc…`, A major, 90 bars):** 1 neighbor melody + 6
+  generated → **6/7 passed** the chiptune gate (quality up to 0.58) → webplayer group
+  **`coherent_remix`** (:8765). Backing stays the same real groove; melody fits the
+  changes.
+- **Commands:**
+  - New melody over a groove: `​.venv-linux/bin/python CODE/51_remix.py --pattern-from <MD5> --new-melody --variants 6 --enhance chiptune --group coherent_remix`
+  - Melody of B over backing of A: `​… --pattern-from <A> --melody-from <B> --enhance clean`
+  - Your own topline: `​… --pattern-from <A> --user-melody mytune.mid`
+- **Notes / next:** `--enhance clean` keeps the original (non-8-bit) timbres if chiptune
+  is too harsh for piano material; chord-snap uses ±7-semitone nearest chord/scale tone
+  (can distort wide leaps — a contour-preserving reharmonizer is the next upgrade);
+  pattern/key assume 4/4 bars.
+
+### 2026-06-25 • Advanced remix — EIS reharmonization + strict voice leading (`51_remix.py --advanced`) ✓
+- **New `--advanced` mode** takes the best 1st-pass coherent mixes and runs them through
+  the **`music_rules` EIS engine** (`music_rules/src/music_rules/core/eis/`), then renders
+  a **3-way comparison** so you can hear the progression:
+  1. **`#0 ORIGINAL base`** — the untouched donor pattern (drums+bass+keys), raw render.
+  2. **`#n 1ST-PASS`** — pattern + key-matched/chord-fit melody (the coherent mix).
+  3. **`#n ADVANCED`** — the 1st-pass put through EIS.
+- **Reharmonization techniques (`--reharm`, comma list; strict EIS voice leading always on):**
+  the harmony is now a **segment timeline** (1 per bar, sub-bar splits allowed) so techniques
+  can replace/split chords:
+  - **`ext`** — chord extensions: every triad → richer EIS class (`eis.chords`: maj→`9`/maj9,
+    min→`min9`, dom→`dom9`, dim→`min7b5`).
+  - **`sub`** — **tritone substitution** on dominants (root +6) — rare chromatic cadential
+    color (4/90 bars on the liked song).
+  - **`dsub`** — **diatonic functional substitution** (`_DEG_SUB`: I↔vi/iii, IV↔ii, vi→I,
+    ii→IV), ~40% of eligible bars; shares 2 common tones so it stays in key.
+  - **`iiv`** — **ii–V insertion**: a V bar is split into ii7 (first half) + V7 (second half).
+  - **`nct`** — **melodic NCT embellishment** (`eis.nct.insert_nct`): passing tone between
+    melody notes a 3rd/4th apart, upper-neighbour on repeats (on the liked song: 403→688
+    melody notes).
+  - **Strict EIS voice leading** (`eis.voice_leading.voice_lead`, V-001/002/003) connects
+    every segment with minimal motion; the comping notes are re-pitched to the **nearest
+    voice-led chord tone** so density & groove are preserved. `all` = ext,sub,dsub,iiv,nct.
+- **Concrete win (liked `15c0ecfc…`):** EIS voice leading ≈ **2.2 semitones/change** vs a
+  blocky independent voicing of the same chords at **~11.5** → ~5× smoother in **7/7**
+  technique variants. (The 0.4·theory+0.6·diatonic gate `quality_score` moves ~±0.04 because
+  richer/chromatic harmony is *less* diatonic by design — it measures key-fit, not
+  sophistication; judge by ear / VL metric.)
+- **3-way render:** `#0 ORIGINAL base` (untouched pattern) / `#n 1ST-PASS` (pattern+melody) /
+  `#n ADVANCED` (reharmonized). `--reharm-compare` renders ONE advanced per technique on the
+  single best melody (base/1st/voicelead/ext/tritone/diatonic-sub/ii-V/nct/ALL) for A/B.
+- **Demo groups (:8765):** `coherent_remix_test` (3-way, 7), `demo_reharm` (per-technique, 8),
+  `demo_melody_sources` (corpus/user/generated toplines, 5), `demo_enhance` (chiptune/clean/arp, 3).
+- **Commands (any song):**
+  - 3-way advanced: `​.venv-linux/bin/python CODE/51_remix.py --pattern-from <MD5> --new-melody --variants 5 --advanced --reharm all --compare-top 3 --group coherent_remix_test`
+  - A/B every technique: `​… --advanced --reharm-compare --compare-top 1 --group demo_reharm`
+  - (swap melody with `--melody-from <B>` / `--user-melody f.mid`). Needs `music_rules`
+    (auto-disables `--advanced` if unavailable).
+
+### 2026-06-24 • "In the style of a liked song" mode (`--like-md5`) ✓
+- **New generator mode** in `CODE/50_generate.py`: make NEW music that feels like a
+  specific liked corpus song without ripping it off. `pick_like(md5, n_neighbors,
+  empty_bias)`:
+  - **Donor pool** = the liked song + its nearest 88-D neighbors (`nearest_neighbors`
+    does an exact cosine scan over `signatures_ext.npy`, skipping the song itself and
+    near-dupe arrangements at cos > 0.999).
+  - **Target** = the liked song's own 88-D vector **nudged toward the nearest empty
+    direction** — `seed + empty_bias·normalize(seed − mean(neighbors))`, i.e. pushed
+    away from the donor crowd into sparser space (default `--empty-bias 0.25`). So we
+    aim *near* the song but deliberately off it.
+  - Then the normal **phrase-level recombination** + proxy-beauty + theory-gate path runs
+    unchanged (donors are auto key-aligned + sliced into LBDM phrases, re-sequenced
+    across donors). `generate_corner(..., spec=...)` was refactored to accept this spec.
+- **New flags:** `--like-md5 <md5>`, `--like-neighbors` (2), `--empty-bias` (0.25),
+  `--like-caption`. Default webplayer group = `style_<md5[:8]>`.
+- **Cosine-scale caveat (important):** corner targets are smooth centroids, but a liked
+  song's vector is a single spiky point, so candidate cos-to-target runs ~0.5 (not ~0.85).
+  Do **NOT** reuse `--gate-min-cos 0.7` here — it's calibrated for corners; use the
+  quality gate alone (or `--gate-min-cos ~0.4`).
+- **Test (liked `15c0ecfc…`, A maj, felt 112, solo-piano gradual):** neighbors
+  `3cd6f778`(0.93)/`1a45f3bb`(0.84) → 48 phrase candidates → kept 8 by corner-novelty
+  (donor_sim **0.49–0.55** vs ~0.95 for a whole-song remix = clearly NOT ripped off) →
+  chiptune gate **5/8 passed** (quality up to 0.86) → webplayer group **`style_15c0ecfc`**
+  (:8765). Same tempo/family feel, fresh content.
+- **Command (style of ANY liked md5):**
+  `​.venv-linux/bin/python CODE/50_generate.py --like-md5 <MD5> --keep 8 --phrase-level --enhance chiptune --group style_<tag>`
+- **FOLLOW-UP — fixed "sounds jumbled" (user feedback):** the original phrase sampler
+  drew melody / harmony / drums INDEPENDENTLY per slot, so chords from donor C sat under
+  a melody from donor B → vertical clash. Added **`--coherent-slots` (default ON)**: each
+  slot is now ONE real excerpt (melody + its own harmony + its own drums from the SAME
+  donor phrase), so harmony sits under the melody; novelty comes purely from re-ordering
+  whole phrases across donors + variable lengths + the empty-biased target. Use
+  `--no-coherent-slots` for the old max-novelty layer-mixing (empty-corner hunts).
+  Coherence also improves with bigger chunks: `--min-bars 4 --max-bars 8 --min-slots 3
+  --max-slots 5`. Re-ran the liked seed coherent → group **`style_15c0_v2`** (7/8 passed,
+  donor_sim ~0.52–0.57, still clearly new). Best "in-style, not jumbled" recipe:
+  `​--like-md5 <MD5> --phrase-level --coherent-slots --min-bars 4 --max-bars 8 --min-slots 3 --max-slots 5 --empty-bias 0.15 --enhance chiptune --gate-min-score 0.5`
+
+### 2026-06-24 • Phrase-level recombination — candidates stop hugging the donors ✓
+- **Problem solved:** route-C whole-song stem swap ({drums A, melody B, harmony C})
+  kept every *high-corner-cosine* candidate nearly identical to one donor (donor_sim
+  0.94–0.98) — "slight remixes", not new music in the empty corner.
+- **Built (all inside `CODE/50_generate.py`, 100% symbolic — no audio ever rendered):**
+  - **Multi-feature Novelty phrase boundary detector** (`detect_boundaries`, LBDM-inspired).
+    On each donor's MELODY stem it combines, per note transition: rest/gap strength,
+    IOI magnitude + IOI *degree-of-change* (LBDM `|a−b|/(a+b)`), melodic leap size,
+    contour-reversal, and per-bar **harmonic novelty** (cosine distance between
+    successive bars' chroma, reusing the 24/25-style features). Saliency is snapped to
+    bar lines and a greedy walk cuts at the most-salient bar in a `[min_bars,max_bars]`
+    window (default **2–8 bars**, variable length, tail always ≥ min_bars).
+  - **Cut-point propagation:** boundaries found on melody are sliced identically into the
+    donor's drums + harmony (`load_phrases`), with notes clipped at phrase ends for clean
+    joins. Each donor is also key-aligned (most-common PC → C) to cut cross-donor clash.
+  - **Phrase-shuffle recombination** (`_phrase_cands`/`build_phrase_song`): pools all
+    donor phrases into mel/harm/drum banks and re-sequences a candidate as N variable
+    slots, each drawing melody / harmony / drums from **different donors**; harmony+drums
+    are tiled/truncated to the melody slot's bar length. Output stays bar-aligned.
+  - **`--phrase-level` (default ON; `--no-phrase-level` = old whole-song)** plus
+    `--n-candidates` (48), `--min-bars/--max-bars`, `--min-slots/--max-slots`, `--seed`.
+  - **`donor_sim` metric** (max cosine of a candidate to ANY single donor, lower=newer)
+    is now computed + printed for both modes, and a **`--novelty-weight` (default 0.5)**
+    makes the KEPT set rank by `cos_to_corner − w·donor_sim` (ranking by corner cosine
+    alone re-selects donor clones, since the donors *define* the corner).
+- **Before/after (rank-1 blend, `--keep 6`):** whole-song kept donor_sim mean **0.958**
+  (min 0.937), corner-cos top 0.963 → **phrase-level kept donor_sim mean 0.812** (min
+  0.740), corner-cos top 0.847 (still above the corner's natural real-neighbor sim ≈0.82).
+  Rank-2: whole kept donor_sim 0.957 → phrase **0.874** (min 0.781). i.e. the candidates
+  you'd actually keep are **~15% (abs) less similar to any original donor** while staying
+  in the corner. With `--force-drum TBB --target tbb_anchored`, phrase candidates hit
+  donor_sim **0.57** (min 0.40), 48/48 beat the donor baseline.
+- **No regressions:** `--enhance chiptune --gate-min-cos 0.7` → 3/3 enhanced passed and
+  rendered → webplayer (`phrase_test`, :8765); TBB anchoring works; `49_sig_one verify`
+  unaffected. Whole-song mode is byte-for-byte the old recipe behind `--no-phrase-level`.
+- **NEW recommended command:**
+  `​.venv-linux/bin/python CODE/50_generate.py --rank 1 --keep 6 --phrase-level --enhance chiptune --gate-min-cos 0.7 --group phrase_birth`
+- **Limitations / next:** boundary grid assumes 4/4 bars; cross-donor key-align is a
+  coarse PC-mode shift (theory gate still does final key-snap); sampler is uniform random
+  (could bias toward max donor-spread or beam-search the cos−w·donor_sim objective).
+
 ### 2026-06-24 • Theory gate + 8-bit steering live via `50_theory_gate.py` ✓
 - **Built `CODE/50_theory_gate.py`** — the post-recombination quality gate + 8-bit
   arranger (TASKS_NEXT Task 2 enhancement). `enhance_candidate(mid, mode, target_vec)`:
