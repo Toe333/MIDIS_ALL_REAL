@@ -708,8 +708,334 @@ def enhance_kept(ranked, cap, mode, min_score, min_cos, tgt=None):
     return rows
 
 
+# =========================================================================
+#            UNIFIED STYLE MODE  (--style: the flagship command)
+# =========================================================================
+def _style_seed_stems(md5):
+    """Seed song -> (melody, harmony, drums) raw role stems at COMMON_TPB."""
+    st = load_stems(md5)
+    if not st:
+        raise SystemExit(f"no notes in seed {md5}")
+    return st.get("melody", []), st.get("harmony", []), st.get("drums", [])
+
+
+def _style_recombine(donors, rng, min_bars=4, max_bars=8, n_slots=6):
+    """Coherent cross-phrase recombination over a donor pool -> (mel, harm, drums).
+
+    Each slot is ONE real excerpt (melody+harmony+drums from the same donor phrase)
+    so chords sit under the melody — novelty comes from re-ordering phrases across
+    donors, not from clashing layers. Reuses the phrase machinery already in this
+    module (boundary detect on melody -> propagate -> re-sequence)."""
+    donor_phrases = {}
+    for d in donors:
+        try:
+            ph = load_phrases(d, min_bars, max_bars)
+        except Exception:  # noqa: BLE001
+            ph = []
+        if ph:
+            donor_phrases[d] = ph
+    mel_bank = [p for d in donor_phrases for p in donor_phrases[d] if p["melody"]]
+    harm_bank = [p for d in donor_phrases for p in donor_phrases[d] if p["harmony"]]
+    drum_bank = [p for d in donor_phrases for p in donor_phrases[d] if p["drums"]]
+    if not mel_bank:
+        return [], [], []
+    slots = []
+    for _ in range(n_slots):
+        mp = mel_bank[int(rng.integers(len(mel_bank)))]
+        hp = mp if mp["harmony"] else (harm_bank[int(rng.integers(len(harm_bank)))]
+                                       if harm_bank else None)
+        dp = mp if mp["drums"] else (drum_bank[int(rng.integers(len(drum_bank)))]
+                                     if drum_bank else None)
+        slots.append((mp, hp, dp))
+    drums, melody, harmony = build_phrase_song(slots, force_drum=False, tbb_loop=None)
+    return melody, harmony, drums
+
+
+_NOVELTY = {"low": dict(empty_bias=0.10, neighbors=1, n_slots=5, best_of=2),
+            "med": dict(empty_bias=0.20, neighbors=2, n_slots=6, best_of=3),
+            "high": dict(empty_bias=0.35, neighbors=3, n_slots=7, best_of=4),
+            "extreme": dict(empty_bias=0.55, neighbors=4, n_slots=8, best_of=5)}
+
+
+def _score_skeleton(GE, skel, prof, seed_vec, rng, outdir, tag):
+    """Restyle a skeleton, write it, score it (diatonic + style-fidelity cosine).
+    Returns (recipe, progs, bpm, path, score, info)."""
+    recipe, progs = GE.restyle(skel, prof, rng)
+    bpm = prof.get("bpm") or skel.get("bpm") or 120.0
+    if not any(recipe):
+        return None
+    path = os.path.join(outdir, f"_cand_{tag}.mid")
+    _GATE_W(recipe, progs, path, bpm)
+    try:
+        dia, has_mel = beauty(path)
+    except Exception:  # noqa: BLE001
+        dia, has_mel = 0.0, False
+    cos = 0.0
+    if seed_vec is not None:
+        try:
+            v = _S.vector_from_midi(path).astype(np.float64)
+            cos = _cos(v, seed_vec)
+        except Exception:  # noqa: BLE001
+            cos = 0.0
+    # want coherent (diatonic, has melody) AND in the seed's family but not a copy
+    score = round(0.6 * dia + 1.0 * float(has_mel) + 0.4 * cos, 4)
+    return recipe, progs, bpm, path, score, dict(diatonic=round(dia, 3),
+                                                 has_melody=has_mel, cos_seed=round(cos, 3))
+
+
+def _GATE_W(recipe, progs, path, bpm):
+    """Write a 4-stem recipe [drums,keys,bass,melody] with program changes."""
+    import mido as _mido
+    mf = _mido.MidiFile(ticks_per_beat=COMMON_TPB)
+    meta = _mido.MidiTrack(); mf.tracks.append(meta)
+    meta.append(_mido.MetaMessage("set_tempo", tempo=_mido.bpm2tempo(int(bpm)), time=0))
+    trk = _mido.MidiTrack(); mf.tracks.append(trk)
+    for ch, prog in sorted(progs.items()):
+        trk.append(_mido.Message("program_change", channel=int(ch), program=int(prog), time=0))
+    events = [ev for st in recipe for ev in st]
+    msgs = []
+    for s, d, ch, p, v in events:
+        p = max(0, min(127, p)); v = max(1, min(127, v))
+        msgs.append((s, 1, ch, p, v)); msgs.append((s + d, 0, ch, p, 0))
+    msgs.sort(key=lambda e: (e[0], e[1]))
+    last = 0
+    for tick, kind, ch, p, v in msgs:
+        dt = tick - last; last = tick
+        trk.append(_mido.Message("note_on" if kind else "note_off",
+                                 channel=ch, note=p, velocity=v, time=dt))
+    os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
+    mf.save(path)
+
+
+def _trim_wav(wav, midp, tail=2.0):
+    """Trim fluidsynth's long reverb/silence tail to (song length + `tail`)s."""
+    try:
+        import wave, mido as _mido
+        secs = _mido.MidiFile(midp).length + tail
+        with wave.open(wav, "rb") as w:
+            fr, ch, sw, n = w.getframerate(), w.getnchannels(), w.getsampwidth(), w.getnframes()
+            keep = min(n, int(secs * fr))
+            if keep >= n:
+                return
+            frames = w.readframes(keep)
+        with wave.open(wav, "wb") as o:
+            o.setnchannels(ch); o.setsampwidth(sw); o.setframerate(fr)
+            o.writeframes(frames)
+    except Exception:  # noqa: BLE001
+        pass
+
+
+def run_style_mode(args):
+    """The flagship unified command: build a coherent base from a seed (or pattern/
+    melody sources), re-skin it into the requested STYLE, and iteratively evolve it
+    into base -> first pass -> final polished versions, rendered to the webplayer."""
+    import genre_engine as GE  # lazy (loads a fresh copy of this module)
+    genre, prof, label = GE.profile_for(args.style)
+    if getattr(args, "keep_drums", False):
+        prof["keep_drums"] = True
+    if getattr(args, "beat", None):
+        res = GE.resolve_beat(args.beat)
+        if res[0] == "pattern":
+            prof["drums"] = res[1]
+            print(f"[style] beat: using registered pattern '{res[1]}'")
+        elif res[0] == "custom":
+            _, bar, nsteps, src = res
+            prof["custom_bar"] = bar
+            tag = f"named '{src}'" if src != "custom" else "custom string"
+            print(f"[style] beat: {tag} -> {nsteps}-step pattern ({len(bar)} hits/bar)")
+        else:
+            print(f"[style] beat: could not parse '{args.beat}'; using genre default")
+    nov = _NOVELTY.get(args.novelty, _NOVELTY["med"])
+    seed_md5 = args.seed_md5 or args.like_md5
+    print(f"[style] '{args.style}' -> genre={genre} bpm={prof.get('bpm')} "
+          f"drums={prof['drums']} mode={prof.get('mode')} novelty={args.novelty} "
+          f"catchy={args.catchy} iterations={args.iterations}")
+
+    seed_vec = None
+    if seed_md5:
+        try:
+            ext, idx, pos, _ = _load_ext()
+            if seed_md5 in pos:
+                seed_vec = ext[pos[seed_md5]].astype(np.float64)
+        except Exception:  # noqa: BLE001
+            seed_vec = None
+
+    tag = (seed_md5[:8] if seed_md5 else (args.pattern_from or "mix")[:8])
+    outdir = os.path.join(OUTBASE, f"style_{genre}_{tag}")
+    os.makedirs(outdir, exist_ok=True)
+    group = args.group or f"{genre}_{tag}"
+
+    # ---------- build the base skeleton ----------
+    if args.pattern_from:
+        # coherent backing (drums+bass+keys) from one song, melody from another/seed
+        R = GE._remix()
+        pst = load_stems(args.pattern_from)
+        if not pst:
+            raise SystemExit(f"no notes in --pattern-from {args.pattern_from}")
+        drums0, backing0 = pst.get("drums", []), pst.get("harmony", [])
+        mel_src = args.melody_from or seed_md5
+        mel0 = R.melody_from_md5(mel_src.split(",")[0].strip()) if mel_src else pst.get("melody", [])
+        total_bars = max(1, int(np.ceil(_span_ticks(drums0, backing0) / BAR_TICKS)))
+        pt, pm, ps = R.key_of(backing0)
+        cg = R.chord_grid(backing0, total_bars)
+        recipe0 = R.build_remix(drums0, backing0, mel0, pt, ps, cg, total_bars)
+        base_mel = [(s, d, 0, p, v) for (s, d, ch, p, v) in recipe0[2]]
+        base_harm = recipe0[1]
+        base_drums = recipe0[0]
+    elif seed_md5:
+        base_mel, base_harm, base_drums = _style_seed_stems(seed_md5)
+    else:
+        raise SystemExit("--style needs --seed-md5 (or --like-md5) or --pattern-from")
+
+    base_skel = GE.skeleton_from_stems(base_mel, base_harm, base_drums)
+    print(f"[style] base skeleton: {base_skel['total_bars']} bars, "
+          f"key tonic_pc={base_skel['tonic_pc']} mode={base_skel['mode']}, "
+          f"mel={len(base_mel)} harm={len(base_harm)} drum={len(base_drums)} notes")
+
+    donors = [seed_md5] if seed_md5 else []
+    if seed_md5:
+        try:
+            donors += [m for m, _ in nearest_neighbors(seed_md5, nov["neighbors"])]
+        except Exception:  # noqa: BLE001
+            pass
+    if args.melody_from:
+        donors += [m.strip() for m in args.melody_from.split(",") if m.strip()]
+    donors = list(dict.fromkeys([d for d in donors if d]))
+
+    versions = []   # (label_for_player, recipe, progs, bpm, info)
+
+    # ---------- v0: BASE (seed skinned into the genre; catchy-arranged) ----------
+    rng = np.random.default_rng(args.seed)
+    sk = GE.arrange_catchy(base_skel, rng=rng) if args.catchy else base_skel
+    out = _score_skeleton(GE, sk, prof, seed_vec, rng, outdir, "base")
+    if out:
+        recipe, progs, bpm, path, score, info = out
+        versions.append(("base", recipe, progs, bpm, info, score))
+        print(f"[style] base: {info} score={score}")
+
+    # ---------- evolution passes ----------
+    n_pass = max(1, args.iterations)
+    for i in range(1, n_pass + 1):
+        is_final = (i == n_pass)
+        passlabel = "final" if is_final else f"pass{i}"
+        best = None
+        n_try = nov["best_of"] if is_final else 1
+        for t in range(n_try):
+            rng = np.random.default_rng(args.seed + i * 100 + t)
+            if donors and len(donors) >= 1:
+                mel, harm, drm = _style_recombine(
+                    donors, rng, min_bars=4, max_bars=8,
+                    n_slots=nov["n_slots"] + (i - 1))
+            else:
+                mel, harm, drm = base_mel, base_harm, base_drums
+            if not mel:
+                mel, harm, drm = base_mel, base_harm, base_drums
+            skel = GE.skeleton_from_stems(mel, harm, drm)
+            if args.catchy:
+                skel = GE.arrange_catchy(skel, rng=rng)
+            out = _score_skeleton(GE, skel, prof, seed_vec, rng, outdir, f"{passlabel}_{t}")
+            if out and (best is None or out[4] > best[4]):
+                best = out
+        if best:
+            recipe, progs, bpm, path, score, info = best
+            versions.append((passlabel, recipe, progs, bpm, info, score))
+            print(f"[style] {passlabel}: {info} score={score} (best of {n_try})")
+
+    if not versions:
+        raise SystemExit("style mode produced no versions")
+
+    # ---------- write final MIDIs + optional theory-gate polish on 'final' ----------
+    finals = []   # (label, midi_path, desc)
+    for vlabel, recipe, progs, bpm, info, score in versions:
+        midp = os.path.join(outdir, f"{genre}_{tag}_{vlabel}.mid")
+        _GATE_W(recipe, progs, midp, bpm)
+        desc = (f"{label} · {vlabel} · {int(bpm)}bpm · diatonic={info['diatonic']} "
+                f"cos_seed={info['cos_seed']}")
+        finals.append((vlabel, midp, desc))
+
+    if args.enhance and args.enhance != "off":
+        # extra polished render of the FINAL through the theory gate (8-bit/clean)
+        G2 = _gate_mod()
+        fin_mid = finals[-1][1]
+        outp = os.path.join(outdir, f"{genre}_{tag}_final_{args.enhance}.mid")
+        try:
+            res = G2.enhance_candidate(fin_mid, mode=args.enhance, out_path=outp,
+                                       target_vec=seed_vec)
+            if res.get("enhanced_path"):
+                finals.append((f"final+{args.enhance}", res["enhanced_path"],
+                               f"{label} · final · theory-gate {args.enhance} "
+                               f"q={res['quality_score']:.2f} key={res['detected_key']}"))
+                print(f"[style] enhance({args.enhance}) -> q={res['quality_score']:.2f}")
+        except Exception as ex:  # noqa: BLE001
+            print(f"[style] enhance failed: {repr(ex)[:80]}")
+
+    # prune temp scoring candidates
+    for f in glob.glob(os.path.join(outdir, "_cand_*.mid")):
+        try:
+            os.remove(f)
+        except OSError:
+            pass
+
+    # candidates CSV
+    pd.DataFrame([dict(version=v[0], bpm=int(v[3]), score=v[5], **v[4])
+                  for v in versions]).to_csv(os.path.join(outdir, "style_versions.csv"),
+                                             index=False)
+
+    print(f"\n[style] {len(finals)} versions -> {outdir}")
+    for vlabel, midp, desc in finals:
+        print(f"   {vlabel:14s} {os.path.basename(midp)}")
+
+    if args.no_audio:
+        return
+
+    # render + load into webplayer (REVERSE so 'final' lands newest/top)
+    for i, (vlabel, midp, desc) in enumerate(reversed(finals), 1):
+        wav = midp.replace(".mid", ".wav")
+        subprocess.run(["fluidsynth", "-ni", "-F", wav, SF2, midp],
+                       check=False, capture_output=True)
+        _trim_wav(wav, midp)
+        if os.path.exists(wav):
+            subprocess.run(["webplayer", "add", wav, "--group", group,
+                            "--label", f"[{label}] {vlabel}", "--desc", desc],
+                           check=False, capture_output=True)
+    subprocess.run(["webplayer", "open"], check=False, capture_output=True)
+    st = subprocess.run(["webplayer", "status"], capture_output=True, text=True)
+    print(f"[webplayer] group '{group}': {len(finals)} tracks\n{st.stdout.strip()}")
+
+
 def main():
     ap = argparse.ArgumentParser()
+    # ---- flagship unified style mode ----
+    ap.add_argument("--style", default=None,
+                    help="FLAGSHIP: free-text style ('death metal with blast beats', "
+                         "'rap', 'chiptune', 'lo-fi', 'trap', 'house'...). Builds a "
+                         "coherent song from --seed-md5/--pattern-from and re-skins it "
+                         "into the genre (tempo/mode/instruments/drums/role-rhythm).")
+    ap.add_argument("--seed-md5", dest="seed_md5", default=None,
+                    help="liked/source corpus md5 to seed the song from (style mode)")
+    ap.add_argument("--novelty", default="med", choices=["low", "med", "high", "extreme"],
+                    help="style mode: how far to push recombination away from the seed")
+    ap.add_argument("--catchy", action="store_true",
+                    help="style mode: arrange a repeating hook (verse/chorus form) so it "
+                         "sounds intentional and memorable")
+    ap.add_argument("--keep-drums", dest="keep_drums", action="store_true",
+                    help="style mode: keep the SEED song's real drum performance instead "
+                         "of generating a genre kit (most faithful to the original feel)")
+    ap.add_argument("--beat", default=None,
+                    help="style mode: drum pattern override — a named beat (compton, tbb, "
+                         "getobeatrap1, seedgroove), a registered kit (openhat, boombap, "
+                         "trap, blast, fourfloor, lofi...), or a custom beat string, one "
+                         "token per 16th step: b=kick s=snare h=hat o=open-hat p=clap "
+                         "c=crash t=tom .=rest, with (group) for simultaneous hits, e.g. "
+                         "'KHKHSHHSHS(KO)KSHOS'")
+    ap.add_argument("--iterations", type=int, default=2,
+                    help="style mode: evolution passes after the base (base + N passes; "
+                         "the last pass is the 'final' polished, best-of-N version)")
+    ap.add_argument("--pattern-from", dest="pattern_from", default=None,
+                    help="style mode: md5 whose drums+bass+keys backing is kept (the "
+                         "melody comes from --melody-from or --seed-md5)")
+    ap.add_argument("--melody-from", dest="melody_from", default=None,
+                    help="style mode: comma md5 list to source the melody/phrases from")
     ap.add_argument("--rank", type=int, default=None, help="row in targets_v2 (default top blend)")
     ap.add_argument("--ranks", default=None, help="comma list of ranks to span (e.g. 1,2,3,4)")
     ap.add_argument("--corner-caption", default=None)
@@ -756,6 +1082,9 @@ def main():
     ap.add_argument("--gate-min-cos", type=float, default=None,
                     help="min cosine-to-corner for an enhanced candidate to pass")
     args = ap.parse_args()
+
+    if args.style:
+        return run_style_mode(args)
 
     force = (args.force_drum or "").upper() == "TBB"
     tbb_loop = load_tbb_loop() if force else None

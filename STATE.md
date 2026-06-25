@@ -464,6 +464,42 @@ next approved pass.
 
 ## SESSION LOG (append-only, newest first)
 
+### 2026-06-25 • FLAGSHIP: unified `--style` song engine + PT drum-pad app ✓
+- **New `CODE/genre_engine.py` + `CODE/50_generate.py --style`** — one high-level command
+  turns a coherent skeleton (from a seed md5 or `--pattern-from`/`--melody-from`) into a
+  GENRE-idiomatic song by re-skinning the 5 things GM render carries: **tempo, mode/scale,
+  instruments, drums, role-rhythm**. Genres: death/black/thrash metal, rap, boom-bap, trap,
+  drill, chiptune/8-bit, lo-fi, house/edm, electronic, ambient, funk, jazz, rock, pop —
+  parsed from free text (`profile_for`) with modifiers (blast beats, half-time, tremolo,
+  dark, fast/slow, NNbpm). Role transforms: tremolo picking, palm-mute power-chord chug,
+  808 sub, hi-hat rolls, arps, chord stabs, pads, walking bass. **Iterative evolution**
+  (`--iterations N` → base → pass1 … → final polished best-of-N), `--novelty low/med/high/
+  extreme` (recombination distance from seed), `--catchy` (pulls the strongest phrase as a
+  hook + AABA form), `--keep-drums` (keep the seed's real kit), `--enhance` (extra
+  theory-gate 8-bit polish on the final). WAV renders trimmed to song length (no reverb tail).
+- **Flagship commands (verified, loaded to webplayer):**
+  ```bash
+  .venv-linux/bin/python CODE/50_generate.py --style "death metal with blast beats" \
+    --seed-md5 15c0ecfc721964b807d0a1dbe5cf9223 --novelty high --catchy --iterations 2 --group death_metal_demo
+  .venv-linux/bin/python CODE/50_generate.py --style "rap" --beat compton \
+    --seed-md5 15c0ecfc721964b807d0a1dbe5cf9223 --catchy --iterations 2 --group compton_rap
+  .venv-linux/bin/python CODE/50_generate.py --style "rap" --pattern-from <A> --melody-from <B> --enhance chiptune
+  ```
+  Demos generated: `death_metal_demo`, `rap_demo`, `chiptune_demo`, `getobeatrap1`, `compton_rap` (3 versions each: base/pass1/final).
+- **`--beat` drum override** — a named beat (`compton`, `tbb`, `getobeatrap1`, `seedgroove`),
+  a registered kit (`openhat`, `boombap`, `trap`, `blast`, `fourfloor`, `lofi`…), or a custom
+  PT/beat string `KHKHSHHSHS(KO)KSHOS` (b=kick s=snare h=hat o=open-hat p=clap c=crash t=tom,
+  `(..)`=simultaneous, `.`=rest; odd lengths snap to a clean 16-grid). `genre_engine.resolve_beat`.
+- **`openhat` groove** = the seed song `15c0ecfc`'s real feel, read off its MIDI (user
+  ear-confirmed): straight 16ths, kick 1&3 / snare 2&4, open-hat on the last two 16ths of
+  each beat.
+- **PT Drum Pad app** (`DRUM_PATTERNS/drumpad.html`, served on :8771 by the desktop
+  `DrumPad.desktop`→`drumpad_launch.sh`) — was 404 (file never existed); built it: WebAudio
+  synth pads (keyboard K/S/H/O/R/C/T/B/P + click), PT-notation 16-step sequencer with presets
+  (COMPTON, TBB, boom-bap, four-on-floor, blast, trap, seed groove, getobeatrap1), **metronome
+  locked to the loop playhead** (free-runs when stopped), tap-tempo, swing, and a simple
+  drum-machine **overdub recorder** (hits snap to the playing loop, re-anchored each bar).
+
 ### 2026-06-25 • Coherent remix — backing from one song + melody from another/new (`CODE/51_remix.py`) ✓
 - **New script `CODE/51_remix.py`**: keep one song's FULL backing (drums + bass +
   keys/harmony groove) intact and lay a key-matched, chord-fitted melody on top —

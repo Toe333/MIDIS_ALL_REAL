@@ -1,0 +1,327 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no"/>
+<title>PT Drum Pad</title>
+<style>
+  :root{
+    --bg:#0c0e14; --panel:#141824; --panel2:#1b2030; --ink:#e7ecf6; --dim:#8a93a8;
+    --accent:#ff5c7a; --accent2:#52e0c4; --accent3:#ffd166; --line:#262d40;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%}
+  body{
+    background:radial-gradient(1200px 700px at 50% -10%,#1a2030,#0c0e14 60%);
+    color:var(--ink);font:15px/1.45 ui-sans-serif,system-ui,Segoe UI,Roboto,Helvetica,Arial;
+    -webkit-tap-highlight-color:transparent;padding:18px;
+  }
+  h1{font-size:18px;margin:0 0 2px;letter-spacing:.5px}
+  h1 span{color:var(--accent)}
+  .sub{color:var(--dim);font-size:12px;margin-bottom:16px}
+  .wrap{max-width:1000px;margin:0 auto}
+  .pads{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:18px}
+  .pad{
+    position:relative;border:1px solid var(--line);border-radius:14px;
+    background:linear-gradient(180deg,var(--panel2),var(--panel));
+    padding:18px 12px;text-align:center;cursor:pointer;user-select:none;
+    transition:transform .04s ease, box-shadow .12s ease, border-color .12s ease;
+    min-height:88px;display:flex;flex-direction:column;justify-content:center;gap:4px;
+  }
+  .pad:hover{border-color:#39425e}
+  .pad .name{font-weight:700;font-size:15px}
+  .pad .key{font-size:11px;color:var(--dim);letter-spacing:1px}
+  .pad .gm{font-size:10px;color:#5c647c}
+  .pad.lit{transform:translateY(2px) scale(.98);border-color:var(--accent);
+    box-shadow:0 0 0 1px var(--accent),0 0 26px -4px var(--accent)}
+  .pad[data-grp="cym"].lit{border-color:var(--accent3);box-shadow:0 0 0 1px var(--accent3),0 0 26px -4px var(--accent3)}
+  .pad[data-grp="hat"].lit{border-color:var(--accent2);box-shadow:0 0 0 1px var(--accent2),0 0 26px -4px var(--accent2)}
+
+  .panel{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:16px;margin-bottom:16px}
+  .row{display:flex;gap:18px;flex-wrap:wrap;align-items:center}
+  .ctl{display:flex;flex-direction:column;gap:6px;min-width:120px}
+  .ctl label{font-size:11px;color:var(--dim);text-transform:uppercase;letter-spacing:1px}
+  .ctl .val{color:var(--accent2);font-variant-numeric:tabular-nums}
+  input[type=range]{width:160px;accent-color:var(--accent)}
+  textarea{
+    width:100%;background:#0a0c12;color:var(--ink);border:1px solid var(--line);border-radius:10px;
+    padding:12px;font:14px/1.5 ui-monospace,SFMono-Regular,Menlo,monospace;resize:vertical;min-height:64px;
+  }
+  .btns{display:flex;gap:10px;flex-wrap:wrap;margin-top:12px;align-items:center}
+  button{
+    background:var(--panel2);color:var(--ink);border:1px solid var(--line);border-radius:10px;
+    padding:10px 16px;font-weight:600;cursor:pointer;transition:.12s
+  }
+  button:hover{border-color:#39425e}
+  button.primary{background:linear-gradient(180deg,#ff6e88,#ff4f6e);border-color:#ff4f6e;color:#1a0b10}
+  button.go{background:linear-gradient(180deg,#5bf0d2,#33d2b4);border-color:#33d2b4;color:#06241d}
+  select{background:#0a0c12;color:var(--ink);border:1px solid var(--line);border-radius:10px;padding:9px 12px}
+  .steps{display:grid;grid-template-columns:repeat(16,1fr);gap:4px;margin-top:14px}
+  .step{height:10px;border-radius:3px;background:#1c2233;border:1px solid #232a3d}
+  .step.beat{background:#243049}
+  .step.on{background:var(--accent2);box-shadow:0 0 10px -2px var(--accent2)}
+  .hint{color:var(--dim);font-size:12px;margin-top:8px}
+  code{background:#0a0c12;border:1px solid var(--line);border-radius:5px;padding:1px 6px;color:var(--accent3)}
+  .pill{font-size:11px;color:var(--dim);border:1px solid var(--line);border-radius:999px;padding:3px 10px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1><span>PT</span> Drum Pad <span class="pill" id="status">click / press a key to start</span></h1>
+  <div class="sub">Tony Bollas Plain-Text drum notation · WebAudio synth (no samples) · keyboard + pattern sequencer</div>
+
+  <div class="pads" id="pads"></div>
+
+  <div class="panel">
+    <div class="row">
+      <div class="ctl"><label>Tempo <span class="val" id="bpmv">118</span> BPM</label>
+        <input id="bpm" type="range" min="50" max="240" value="118"></div>
+      <div class="ctl"><label>Swing <span class="val" id="swingv">0%</span></label>
+        <input id="swing" type="range" min="0" max="60" value="0"></div>
+      <div class="ctl"><label>Volume <span class="val" id="volv">80%</span></label>
+        <input id="vol" type="range" min="0" max="100" value="80"></div>
+      <div class="ctl"><label>Preset</label>
+        <select id="preset"></select></div>
+    </div>
+
+    <div style="margin-top:14px">
+      <label style="font-size:11px;color:var(--dim);text-transform:uppercase;letter-spacing:1px">PT pattern (16th grid · ( ) = simultaneous · . = rest)</label>
+      <textarea id="pt" spellcheck="false">(HK).(Hs)(KO)..(KSH)..(K.s)(KO)..(KS)..(Hs)</textarea>
+    </div>
+    <div class="steps" id="steps"></div>
+    <div class="btns">
+      <button class="go" id="play">▶ Play loop</button>
+      <button id="stop">■ Stop</button>
+      <button id="metro">🎵 Metronome</button>
+      <button id="tap">Tap tempo</button>
+      <button class="primary" id="rec">● Rec (live)</button>
+      <button id="clear">Clear rec</button>
+      <span class="pill" id="beatdot">— · — · — · —</span>
+      <span class="pill" id="recinfo"></span>
+    </div>
+    <div class="hint">Keys: <code>K</code> kick · <code>S</code> snare · <code>H</code> closed hat · <code>O</code> open hat ·
+      <code>R</code> ride · <code>C</code> crash · <code>T</code> tom · <code>B</code> tamb · <code>P</code> clap · <code>space</code> kick · <code>M</code> metronome · <code>Enter</code> play/stop.
+      Ties <code>-</code> and rests <code>.</code> in PT are silent slots.</div>
+  </div>
+</div>
+
+<script>
+"use strict";
+let AC=null;
+function ac(){ if(!AC){AC=new (window.AudioContext||window.webkitAudioContext)(); master=AC.createGain(); master.gain.value=0.8; master.connect(AC.destination);} if(AC.state==="suspended")AC.resume(); return AC; }
+let master=null;
+
+// ---------- drum synthesis ----------
+function noiseBuf(sec){
+  const a=ac(); const n=Math.floor(a.sampleRate*sec); const b=a.createBuffer(1,n,a.sampleRate);
+  const d=b.getChannelData(0); for(let i=0;i<n;i++) d[i]=Math.random()*2-1; return b;
+}
+function env(g,t0,peak,dec){ g.gain.setValueAtTime(0.0001,t0); g.gain.exponentialRampToValueAtTime(peak,t0+0.002); g.gain.exponentialRampToValueAtTime(0.0001,t0+dec); }
+function tone(freq,f1,dec,type,peak,t0){ const a=ac(); const o=a.createOscillator(); const g=a.createGain();
+  o.type=type||"sine"; o.frequency.setValueAtTime(freq,t0); if(f1)o.frequency.exponentialRampToValueAtTime(f1,t0+dec);
+  env(g,t0,peak,dec); o.connect(g); g.connect(master); o.start(t0); o.stop(t0+dec+0.02); }
+function noise(dec,hp,lp,peak,t0){ const a=ac(); const s=a.createBufferSource(); s.buffer=noiseBuf(dec+0.05);
+  let node=s; if(hp){const f=a.createBiquadFilter();f.type="highpass";f.frequency.value=hp;node.connect(f);node=f;}
+  if(lp){const f=a.createBiquadFilter();f.type="lowpass";f.frequency.value=lp;node.connect(f);node=f;}
+  const g=a.createGain(); env(g,t0,peak,dec); node.connect(g); g.connect(master); s.start(t0); s.stop(t0+dec+0.05); }
+
+const VOICES={
+  K:{name:"Kick",key:"K",gm:36,grp:"low",play:t=>{tone(150,48,0.42,"sine",1.0,t);} },
+  S:{name:"Snare",key:"S",gm:38,grp:"mid",play:t=>{tone(190,120,0.18,"triangle",0.5,t);noise(0.2,1500,9000,0.7,t);} },
+  H:{name:"Closed Hat",key:"H",gm:42,grp:"hat",play:t=>{noise(0.05,8000,null,0.4,t);} },
+  O:{name:"Open Hat",key:"O",gm:46,grp:"hat",play:t=>{noise(0.35,7000,null,0.35,t);} },
+  R:{name:"Ride",key:"R",gm:51,grp:"cym",play:t=>{noise(0.5,9000,null,0.18,t);tone(420,400,0.4,"square",0.06,t);} },
+  C:{name:"Crash",key:"C",gm:49,grp:"cym",play:t=>{noise(1.1,5000,null,0.45,t);} },
+  T:{name:"Tom",key:"T",gm:45,grp:"low",play:t=>{tone(160,90,0.3,"sine",0.8,t);} },
+  B:{name:"Tamb",key:"B",gm:54,grp:"hat",play:t=>{noise(0.12,9000,null,0.3,t);} },
+  P:{name:"Clap",key:"P",gm:39,grp:"mid",play:t=>{for(let i=0;i<3;i++)noise(0.12,1400,7000,0.4,t+i*0.012);} },
+};
+const ORDER=["K","S","H","O","R","C","T","B","P"];
+const KEYMAP={}; ORDER.forEach(k=>KEYMAP[VOICES[k].key.toLowerCase()]=k); KEYMAP[" "]="K";
+
+function trigger(sym,t){ const v=VOICES[sym]; if(!v)return; v.play(t!==undefined?t:ac().currentTime); }
+
+// ---------- pads UI ----------
+const padsEl=document.getElementById("pads");
+const padNodes={};
+ORDER.forEach(sym=>{
+  const v=VOICES[sym];
+  const d=document.createElement("div");
+  d.className="pad"; d.dataset.grp=v.grp; d.dataset.sym=sym;
+  d.innerHTML=`<div class="name">${v.name}</div><div class="key">KEY: ${v.key}</div><div class="gm">GM ${v.gm}</div>`;
+  d.addEventListener("pointerdown",e=>{e.preventDefault();hit(sym);});
+  padsEl.appendChild(d); padNodes[sym]=d;
+});
+function flash(sym){ const n=padNodes[sym]; if(!n)return; n.classList.add("lit"); setTimeout(()=>n.classList.remove("lit"),90); }
+function hit(sym){ ac(); trigger(sym); flash(sym); setStatus("playing"); if(recording)recHit(sym); }
+
+// ---------- keyboard ----------
+window.addEventListener("keydown",e=>{
+  if(e.repeat)return;
+  const tgt=e.target.tagName; if(tgt==="TEXTAREA"||tgt==="INPUT"||tgt==="SELECT")return;
+  if(e.key.toLowerCase()==="m"){ e.preventDefault(); toggleMetro(); return; }
+  const sym=KEYMAP[e.key.toLowerCase()]||KEYMAP[e.key];
+  if(sym){ e.preventDefault(); hit(sym); }
+  if(e.key==="Enter"){ togglePlay(); }
+});
+
+// ---------- controls ----------
+const bpmEl=document.getElementById("bpm"),bpmv=document.getElementById("bpmv");
+const swingEl=document.getElementById("swing"),swingv=document.getElementById("swingv");
+const volEl=document.getElementById("vol"),volv=document.getElementById("volv");
+let bpm=118,swing=0;
+bpmEl.oninput=()=>{bpm=+bpmEl.value;bpmv.textContent=bpm;};
+swingEl.oninput=()=>{swing=+swingEl.value;swingv.textContent=swing+"%";};
+volEl.oninput=()=>{volv.textContent=volEl.value+"%"; if(master)master.gain.value=volEl.value/100;};
+function setStatus(s){document.getElementById("status").textContent=s;}
+
+// ---------- PT parser ----------
+function parsePT(str){
+  const slots=[]; let i=0;
+  str=str.replace(/\[|\]/g,"").trim();
+  while(i<str.length){
+    const c=str[i];
+    if(c==="("){ const j=str.indexOf(")",i); const grp=str.slice(i+1,j<0?str.length:j); slots.push(grp); i=(j<0?str.length:j+1); }
+    else if(c===" "||c==="\n"||c==="\t"){ i++; }
+    else { slots.push(c); i++; }
+  }
+  // each slot -> array of voice symbols (uppercase letters only; . - = rest/tie)
+  return slots.map(tok=>{
+    const out=[]; for(const ch of tok){ const u=ch.toUpperCase(); if(VOICES[u])out.push(u); }
+    return out;
+  });
+}
+
+// ---------- step display ----------
+const stepsEl=document.getElementById("steps"); let stepNodes=[];
+function buildSteps(n){
+  stepsEl.innerHTML=""; stepNodes=[];
+  for(let i=0;i<n;i++){ const s=document.createElement("div"); s.className="step"+(i%4===0?" beat":""); stepsEl.appendChild(s); stepNodes.push(s); }
+}
+
+// ---------- sequencer ----------
+let playing=false,timer=null,curStep=0,pattern=[],loopStartTime=0;
+function togglePlay(){ playing?stop():play(); }
+function play(){
+  ac(); pattern=parsePT(document.getElementById("pt").value); if(!pattern.length)return;
+  buildSteps(pattern.length); playing=true; curStep=0; setStatus("loop playing");
+  if(metroTimer){clearTimeout(metroTimer);metroTimer=null;}  // hand the click over to the sequencer
+  schedule();
+}
+function stepDur(){ return 60/bpm/4; } // 16th note seconds (4 per beat)
+function schedule(){
+  if(!playing)return;
+  const n=pattern.length; const idx=curStep%n;
+  // swing: delay odd 16ths
+  const sw=(idx%2===1)? (swing/100)*stepDur()*0.6 : 0;
+  const t=ac().currentTime+0.01+sw;
+  if(idx===0) loopStartTime=t;   // re-anchor the grid every loop (keeps record tight)
+  if(metroOn && idx%4===0){ metClick(idx===0, t); beatDots((idx/4)%4); }  // click locked to the loop
+  pattern[idx].forEach(sym=>{trigger(sym,t);flash(sym);});
+  stepNodes.forEach((s,i)=>s.classList.toggle("on",i===idx));
+  curStep++;
+  timer=setTimeout(schedule, stepDur()*1000 + (idx%2===1?0:0));
+}
+function stop(){ playing=false; if(timer)clearTimeout(timer); stepNodes.forEach(s=>s.classList.remove("on")); setStatus("stopped");
+  if(metroOn){ metroBeat=0; metroTick(); }   // resume free-run click so the metronome keeps going alone
+}
+document.getElementById("play").onclick=play;
+document.getElementById("stop").onclick=stop;
+
+// ---------- metronome ----------
+let metroOn=false,metroTimer=null,metroBeat=0;
+function metClick(accent,when){
+  const a=ac(); const o=a.createOscillator(); const g=a.createGain(); const t=(when!==undefined?when:a.currentTime);
+  o.type="square"; o.frequency.value=accent?2000:1300;
+  g.gain.setValueAtTime(0.0001,t); g.gain.exponentialRampToValueAtTime(accent?0.5:0.3,t+0.001);
+  g.gain.exponentialRampToValueAtTime(0.0001,t+0.05);
+  o.connect(g); g.connect(master); o.start(t); o.stop(t+0.06);
+}
+function beatDots(active){
+  const dots=[0,1,2,3].map(i=>i===active?"●":"·");
+  document.getElementById("beatdot").textContent=dots.join(" ");
+}
+function metroTick(){                 // free-run click, ONLY used when no loop is playing
+  if(!metroOn||playing)return;
+  const beat=metroBeat%4;
+  metClick(beat===0); beatDots(beat);
+  metroBeat++;
+  metroTimer=setTimeout(metroTick, 60/bpm*1000); // quarter note, adapts to live BPM
+}
+function toggleMetro(){
+  metroOn=!metroOn;
+  const btn=document.getElementById("metro");
+  if(metroOn){ ac(); metroBeat=0; btn.classList.add("go"); btn.textContent="🎵 Metronome ON";
+    if(!playing) metroTick();          // when a loop plays, the sequencer drives the click (stays in sync)
+  } else { if(metroTimer)clearTimeout(metroTimer); btn.classList.remove("go"); btn.textContent="🎵 Metronome"; beatDots(-1); }
+}
+document.getElementById("metro").onclick=toggleMetro;
+
+// ---------- tap tempo ----------
+let taps=[];
+document.getElementById("tap").onclick=()=>{
+  const now=performance.now(); taps.push(now); taps=taps.filter(t=>now-t<2500);
+  if(taps.length>=2){ const d=[]; for(let i=1;i<taps.length;i++)d.push(taps[i]-taps[i-1]);
+    const avg=d.reduce((a,b)=>a+b,0)/d.length; const b=Math.round(60000/avg);
+    if(b>=50&&b<=240){bpm=b;bpmEl.value=b;bpmv.textContent=b;} }
+};
+
+// ---------- live OVERDUB record (drum-machine style) ----------
+// The loop plays; each pad hit snaps to the nearest 16th of the playing loop
+// (re-anchored every bar via loopStartTime), so timing can't drift.
+let recording=false;
+function writePT(){
+  document.getElementById("pt").value =
+    pattern.map(s=> s.length ? (s.length>1?"("+s.join("")+")":s[0]) : ".").join("");
+}
+function recHit(sym){
+  if(!playing||!pattern.length)return;
+  const n=pattern.length;
+  let step=Math.round((ac().currentTime-loopStartTime)/stepDur());
+  step=((step%n)+n)%n;
+  if(!pattern[step].includes(sym)){ pattern[step].push(sym); writePT(); }
+  if(stepNodes[step]) stepNodes[step].classList.add("on");
+}
+document.getElementById("rec").onclick=()=>{
+  recording=!recording;
+  const btn=document.getElementById("rec");
+  if(recording){
+    ac();
+    if(!playing){                                   // start an empty 16-step loop to record into
+      if(!document.getElementById("pt").value.trim()) document.getElementById("pt").value=".".repeat(16);
+      play();
+    }
+    if(!metroOn) toggleMetro();                      // click track to play to
+    btn.textContent="● Recording…";
+    document.getElementById("recinfo").textContent="play the pads — snaps to the loop";
+  } else {
+    btn.textContent="● Rec (live)";
+    document.getElementById("recinfo").textContent="recorded ✓";
+  }
+};
+document.getElementById("clear").onclick=()=>{
+  pattern=parsePT(".".repeat(16));
+  document.getElementById("pt").value=".".repeat(16);
+  buildSteps(16); document.getElementById("recinfo").textContent="cleared";
+};
+
+// ---------- presets ----------
+const PRESETS={
+  "COMPTON":"KHKHSHHSHS(KO)KSHOS",
+  "TBB v1 (locked 118)":"(HK).(Hs)(KO)..(KSH)..(K.s)(KO)..(KS)..(Hs)",
+  "rock backbeat":"(HK).H.(HS).H.(HK).H.(HS).H.",
+  "getobeatrap1":"KHKHSHHHKHKKHSHH",
+  "open-hat seed groove":"(HK)HOO(HKS)HOO(HK)HOO(HKS)HOO",
+  "four on the floor":"(KH)H(OH)H(KSH)H(OH)H(KH)H(OH)H(KSH)H(OH)H",
+  "boom bap":"(KH).HO(SH).HO(KH).(KH)O(SH).HO",
+  "blast beat":"(KCH)S(KH)S(KH)S(KH)S(KH)S(KH)S(KH)S(KH)S",
+  "trap (half-time)":"K..H..(SC)...K.H.K..H",
+};
+const presetEl=document.getElementById("preset");
+Object.keys(PRESETS).forEach(name=>{const o=document.createElement("option");o.value=name;o.textContent=name;presetEl.appendChild(o);});
+presetEl.onchange=()=>{ const v=PRESETS[presetEl.value]; if(v){document.getElementById("pt").value=v; if(presetEl.value.includes("118")){bpm=118;bpmEl.value=118;bpmv.textContent=118;} buildSteps(parsePT(v).length);} };
+
+buildSteps(16);
+</script>
+</body>
+</html>
