@@ -464,6 +464,44 @@ next approved pass.
 
 ## SESSION LOG (append-only, newest first)
 
+### 2026-06-24 • Theory gate + 8-bit steering live via `50_theory_gate.py` ✓
+- **Built `CODE/50_theory_gate.py`** — the post-recombination quality gate + 8-bit
+  arranger (TASKS_NEXT Task 2 enhancement). `enhance_candidate(mid, mode, target_vec)`:
+  (1) **key detection** via music21 `analyze('key')` with a Krumhansl-Schmuckler
+  pitch-class fallback; (2) **chiptune arrange** to a **≤4-voice budget** — square lead
+  (GM 80) / saw-pulse harmony (81) / synth bass (38) / drums on ch9 — with `--mode arp`
+  turning held chords into 1/16 arpeggios, plus optional in-key note snapping;
+  (3) **voice-leading grade** via the sibling `music_rules.evaluate_passage` (184
+  Fux/EIS rules) over beat-reduced bass+melody columns; (4) **cosine re-score** of the
+  enhanced file to the corner target through `49_sig_one.vector_from_midi`;
+  (5) **rejection sampling** over snap/no-snap variants, keep best by quality.
+  Returns `{enhanced_path, quality_score, detected_key, grade, cosine, ...}`. Standalone
+  CLI: `--input/--mode/--target_corner/--out/--dry-run/-v`.
+- **Note on the rules engine:** strict species counterpoint grades nearly all pop/8-bit
+  material "F", so the gate uses it as a *relative* cleanliness signal (cost + hard hits
+  per beat), NOT a hard pass/fail. Real gates = quality score (voice-leading + original
+  key-fit) + corner cosine. Key-fit is measured on the ORIGINAL notes (snapping makes the
+  enhanced file diatonic by construction, so it can't discriminate).
+- **Patched `CODE/50_generate.py`** with `--enhance {chiptune,arp,clean}` +
+  `--gate-min-score` / `--gate-min-cos`: after recombination it runs `enhance_candidate`
+  on every kept candidate, writes `_work/generated/<corner>/.../enhanced_*.mid`, keeps
+  only survivors that pass rules+quality+cosine, and auditions THOSE (not the raw
+  recombinations) in the webplayer. The exact corner target vector from `pick_corner`
+  is threaded through so cosine is scored against the same point the recombiner aimed at.
+- **Deps installed into `.venv-linux`** (uv): `music21 10.5.0`, `pretty_midi 0.2.11`,
+  `mido` (already present), and `pydantic 2.13.4` (needed by `music_rules`).
+- **End-to-end test PASSED:** corner rank 1 (`138bpm constant · triplet-feel · sync0.50
+  · chroma0.32 · diat0.80 · chord_dens1.86`) → 27 recombinations → top 3 kept (cos
+  0.963/0.963/0.954) → chiptune-gated → **3/3 passed** (quality 0.796, enhanced cosine
+  0.962/0.961/0.952, keys G major / G major / E minor) → rendered WAV (fluidsynth +
+  GeneralUserGS.sf2) → loaded into webplayer group **`gated_test`** (:8765). Verified the
+  enhanced MIDIs carry program changes `0→80,1→81,2→38` and exactly 4 voices `[0,1,2,9]`.
+  `49_sig_one verify` still reproduces stored rows at cosine **1.0000**.
+- **Run full gated gen (one-liner):**
+  `​.venv-linux/bin/python CODE/50_generate.py --rank 1 --keep 3 --enhance chiptune --gate-min-cos 0.7 --group gated_test`
+- Docs: TASKS_NEXT.md Task 2 marked DONE w/ one-liner; MANUAL.md §10 "theory gate &
+  8-bit workflow" added.
+
 ### 2026-06-23 — KS8 brute-force permutation hunt (pure kick+snare skeletons)
 - User instructions: Do **not** commit 8-bit.* (or similar experiment sources). SSH to t@imac and move the file to ~/Desktop/ or ~/there-mang-linux/ (found via ssh: there-mang-linux, there-mang-linux-copy, there-mang-for-heavy exist on Mac).
 - Listening verdict on prior work (tbb_style_v1 + all_256 + gens): "i dont mind the beat" but "got rid of the boogie woogies piano, its already a style and kind of corny". "i kept the decent ones but we arent there yet".
@@ -475,7 +513,13 @@ next approved pass.
 - 8-bit.json (likely the bit/perm source for the prior all_256) was not present on this Linux box (untracked files had been cleaned in prior steps). Transferred the concrete outputs (MIDIs + index + script) instead. Will scp the exact json if path provided.
 - Audition notes:
   - Raw `.mid` ready for any MIDI player / DAW / browser synth (direct load the folder on your Mac).
-  - The project's `webplayer add` expects rendered audio (not raw .mid). Background render of all 256 to `ks8_wav/*.wav` started using local GeneralUserGS.sf2; will `webplayer add` to group `ks8_audit` once done.
+  - The project's `webplayer add` expects rendered audio (not raw .mid). Full render of all 256 16-bar patterns to `ks8_wav/*.wav` (GeneralUserGS.sf2) completed. Added to group `ks8_audit` (with labels like "ks0000 kkkkkkkk" and pattern descriptions). `webplayer open` run — server on :8765. User confirmed the voting UI (now-playing bar with ✓Keep / ✗Toss, auto-advance, random, per-track toss, single-play) "this ones ok". 
+  - **New rule from user**: "snare and kick cant repeat more than 2x" (no 3+ consecutive identical K or S in the 8-char string; e.g. kksskkss OK, kkksssks bad).
+  - Applied to the 240 still undecided: **68 pass** the rule.
+  - Created focused webplayer group `ks8_no_triple` containing *only* these 68 (same WAVs re-added with labels + rule note in desc).
+  - Clean list (tab sep): `DRUM_PATTERNS/ks8_remaining_no_triple.txt` (and ks8_suggested.txt for rule-scored ones).
+  - In webplayer, switch/reload to group ks8_no_triple to see exactly "the ones left" under this rule. Raw .mid + combined also available.
+  - Scored vs atlas rules too.
   - Old `all_256.mid` (1-bar sequenced) also transferred for comparison.
 - This replaces hand-crafted "LEFT" candidates with full enumeration of the 8-slot KS space (hi-hats fixed). Goal: find the "jumps out" pocket that becomes the locked TBB foundation (or evolve the 16-slot TBB rules from it). No other instruments to avoid style pollution.
 - Git: respected "don't commit the 8-bit junk". Generated MIDIs left untracked (per project .gitignore convention for *.mid). Script + index are the artifacts to keep under version control if desired.

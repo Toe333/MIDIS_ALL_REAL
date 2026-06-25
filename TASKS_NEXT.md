@@ -69,6 +69,25 @@ catalog). DO NOT touch signatures_ext.npy / knn_cosine.pkl. Append a STATE.md se
 
 ## TASK 2 — Build the generator (target an empty corner)  ★ the frontier / biggest lift
 
+> **STATUS 2026-06-24 — DONE (route C + theory-gated 8-bit enhancement).**
+> - `CODE/49_sig_one.py` (signature-of-one-MIDI) verified: rebuilds a known corpus
+>   row at cosine **1.0000** from both catalog and raw `.mid`.
+> - `CODE/50_generate.py` route-C recombination is live (stem split → recombine →
+>   cosine-to-corner → proxy-beauty gate → webplayer).
+> - **NEW: `CODE/50_theory_gate.py`** — theory-gated, 8-bit-aware enhancement
+>   (`enhance_candidate`): music21 key detection, `music_rules.evaluate_passage`
+>   voice-leading grade, **chiptune ≤4-voice + arp** arrange (square 80 / saw 81 /
+>   bass 38 / noise ch9), re-scored cosine-to-corner, rejection-sampled variants.
+> - **NEW: `50_generate.py --enhance {chiptune,arp,clean}`** runs `enhance_candidate`
+>   on every kept candidate, keeps only those passing rules + quality + cosine, writes
+>   `_work/generated/<corner>/enhanced_*.mid` and auditions the survivors.
+>
+> **Run full gated gen (one-liner):**
+> ```bash
+> .venv-linux/bin/python CODE/50_generate.py --rank 1 --keep 3 --enhance chiptune --gate-min-cos 0.7 --group gated_test
+> ```
+> Single-file gate: `.venv-linux/bin/python CODE/50_theory_gate.py --input <mid> --mode chiptune --target_corner "<caption>"`
+
 ```PROMPT
 Root: /mnt/2FAST/MIDIS_ALL_REAL. Read STATE.md and TASKS_NEXT.md "Shared context" first.
 Use the .venv-linux uv venv. This is the north-star step: GENERATE music that lands in a

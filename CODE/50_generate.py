@@ -46,6 +46,14 @@ def _load(modfile, name):
 
 _S = _load("49_sig_one.py", "sig_one")     # vector_from_midi / parse / blocks
 _m24 = _S._m24                              # melody channel picker
+_GATE = None                                # 50_theory_gate (lazy; only if --enhance)
+
+
+def _gate_mod():
+    global _GATE
+    if _GATE is None:
+        _GATE = _load("50_theory_gate.py", "theory_gate")
+    return _GATE
 
 
 # ----------------------------- corner target -------------------------------
@@ -264,7 +272,37 @@ def generate_corner(rank, caption, force_drum, diatonic, tbb_loop, target_mode="
                     print(f"  skip {name}: {repr(ex)[:60]}"); os.remove(path); continue
                 cands.append(dict(name=name, path=path, cos=cos, diatonic=dia, has_melody=has_mel,
                                   drums=dlabel, melody=mb[:4], harmony=hc[:4], tbb=has_tbb, cap=cap))
-    return cands, base, cap
+    return cands, base, cap, tgt
+
+
+def enhance_kept(ranked, cap, mode, min_score, min_cos, tgt=None):
+    """Run the theory gate (50_theory_gate.enhance_candidate) on each kept
+    candidate; write enhanced_<stem>.mid beside it; return per-candidate result
+    dicts with a `passed` flag. `tgt` is the exact corner target vector the
+    recombiner aimed at (so cosine is scored against the same point)."""
+    G = _gate_mod()
+    if tgt is None:
+        tgt = G.corner_target_from_caption(cap)
+    if tgt is None:
+        print("[gate] no corner target vector; cosine gate disabled")
+    rows = []
+    for r in ranked.itertuples():
+        src = r.path
+        outp = os.path.join(os.path.dirname(src),
+                            "enhanced_" + os.path.basename(src))
+        try:
+            res = G.enhance_candidate(src, mode=mode, out_path=outp, target_vec=tgt)
+            res["passed"] = bool(G.passes_gate(res, min_score, min_cos))
+        except Exception as ex:  # noqa: BLE001
+            print(f"[gate] enhance failed for {os.path.basename(src)}: {repr(ex)[:80]}")
+            res = dict(input=src, enhanced_path=None, quality_score=0.0, cosine=None,
+                       detected_key="?", grade="err", passed=False)
+        res["src_cos"] = float(getattr(r, "cos", 0.0))
+        rows.append(res)
+        print(f"  [gate] {os.path.basename(src)} -> key={res['detected_key']} "
+              f"grade={res['grade']} q={res['quality_score']:.3f} "
+              f"cos={res['cosine']} {'PASS' if res['passed'] else 'fail'}")
+    return rows
 
 
 def main():
@@ -279,6 +317,12 @@ def main():
                     help="tbb_anchored = score vs corner pitch/melody/harmony + TBB rhythm/groove")
     ap.add_argument("--group", default=None)
     ap.add_argument("--no-audio", action="store_true")
+    ap.add_argument("--enhance", default="off", choices=["off", "chiptune", "arp", "clean"],
+                    help="post-process kept candidates through CODE/50_theory_gate.py "
+                         "(theory gate + 8-bit arrange); keep only those that pass")
+    ap.add_argument("--gate-min-score", type=float, default=0.6)
+    ap.add_argument("--gate-min-cos", type=float, default=None,
+                    help="min cosine-to-corner for an enhanced candidate to pass")
     args = ap.parse_args()
 
     force = (args.force_drum or "").upper() == "TBB"
@@ -290,8 +334,9 @@ def main():
              else [args.rank])
     all_cands = []
     base = 0.0
+    tgt = None
     for rk in ranks:
-        cs, b, cap = generate_corner(rk, args.corner_caption, force, args.diatonic, tbb_loop, args.target)
+        cs, b, cap, tgt = generate_corner(rk, args.corner_caption, force, args.diatonic, tbb_loop, args.target)
         all_cands += cs
         base = max(base, b)
     if not all_cands:
@@ -321,10 +366,49 @@ def main():
         if p not in keep_paths and os.path.exists(p):
             os.remove(p)
 
+    # ---- theory gate + 8-bit enhancement (Task-2 route, behind --enhance) ----
+    enhanced_rows = None
+    if args.enhance != "off":
+        enhanced_rows = enhance_kept(ranked, cap, args.enhance,
+                                     args.gate_min_score, args.gate_min_cos, tgt)
+        gcsv = os.path.join(outdir, "candidates_gated.csv")
+        pd.DataFrame(enhanced_rows).to_csv(gcsv, index=False)
+        n_pass = sum(r["passed"] for r in enhanced_rows)
+        print(f"\n[gate] mode={args.enhance}: {n_pass}/{len(enhanced_rows)} enhanced "
+              f"candidates passed (min_score={args.gate_min_score}, "
+              f"min_cos={args.gate_min_cos}) -> {gcsv}")
+
     if args.no_audio:
         return
-    # render kept candidates + load into webplayer (REVERSE so rank #1 is newest)
     group = args.group or ("tbb_birth30" if force else f"generated_{slug[:20]}")
+
+    if enhanced_rows is not None:
+        # render ENHANCED passing files (fallback to best-quality if none passed)
+        passing = [r for r in enhanced_rows if r["passed"] and r.get("enhanced_path")]
+        if not passing:
+            passing = sorted([r for r in enhanced_rows if r.get("enhanced_path")],
+                             key=lambda r: r["quality_score"], reverse=True)[:1]
+            if passing:
+                print("[gate] none passed; auditioning best-quality enhanced candidate")
+        passing = sorted(passing, key=lambda r: (r.get("cosine") or 0, r["quality_score"]),
+                         reverse=True)
+        for i, r in enumerate(reversed(passing), 1):
+            wav = r["enhanced_path"].replace(".mid", ".wav")
+            subprocess.run(["fluidsynth", "-ni", "-F", wav, SF2, r["enhanced_path"]],
+                           check=False, capture_output=True)
+            if os.path.exists(wav):
+                rank_i = len(passing) - i + 1
+                cs = f"{r['cosine']:.3f}" if r.get("cosine") is not None else "n/a"
+                subprocess.run(["webplayer", "add", wav, "--group", group,
+                                "--label", f"#{rank_i} {args.enhance} cos{cs} q{r['quality_score']:.2f}",
+                                "--desc", f"{cap} | key={r['detected_key']} grade={r['grade']}"],
+                               check=False, capture_output=True)
+        subprocess.run(["webplayer", "open"], check=False, capture_output=True)
+        st = subprocess.run(["webplayer", "status"], capture_output=True, text=True)
+        print(f"[webplayer] group '{group}': {len(passing)} enhanced tracks\n{st.stdout.strip()}")
+        return
+
+    # render kept candidates + load into webplayer (REVERSE so rank #1 is newest)
     rows = list(ranked.itertuples())
     for i, r in enumerate(reversed(rows), 1):
         wav = r.path.replace(".mid", ".wav")

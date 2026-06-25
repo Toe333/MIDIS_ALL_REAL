@@ -297,3 +297,62 @@ reverse so rank #1 is the newest-added file.)
 
 If those five land, you've got it. Re-read 1–6 whenever a detail slips; re-read 9
 when you just need the gist.
+
+---
+
+## 10. Generating into a corner — the theory gate & 8-bit workflow
+
+Once you've *found* an empty corner (step 4), you have to *fill* it with an actual
+song. That's a two-stage pipeline:
+
+**Stage 1 — recombine (`CODE/50_generate.py`).** Take the real songs nearest the
+corner, split each into stems (drums / melody / harmony), and rebuild new candidates
+from mixed stems (drums from A, melody from B, harmony from C) nudged to the corner's
+tempo. Each candidate is embedded with `49_sig_one.py` and scored by **cosine to the
+corner target** — we keep the ones closest to the corner.
+
+**Stage 2 — theory gate + 8-bit arrange (`CODE/50_theory_gate.py`).** A raw
+recombination lands in the right *region* but is musically rough. The gate:
+
+1. **Detects the key** (music21, with a Krumhansl fallback).
+2. **Arranges it as chiptune** — reduces to a **≤4-voice 8-bit budget**: square-wave
+   lead (GM program 80), saw/pulse harmony (81), synth bass (38), and drums/noise on
+   channel 9. `--mode arp` turns held chords into classic 1/16 arpeggios.
+3. **Grades the voice-leading** with the sibling `music_rules` engine
+   (`evaluate_passage`, 184 Fux/EIS rules) and measures **diatonic key-fit**.
+4. **Re-scores** the enhanced file's cosine to the corner (it should *stay* on target).
+5. **Rejection-samples** a couple of arrangement variants (key-snap on/off) and keeps
+   the best — a lightweight steer toward a clean, on-target 8-bit rendering.
+
+A candidate **passes the gate** when its quality score (voice-leading cleanliness +
+original key-fit) clears `--gate-min-score` and, if a target was given, its cosine
+clears `--gate-min-cos`. Note: strict species counterpoint grades almost all pop/8-bit
+material "F", so we use the rules as a *relative* cleanliness signal, not a hard
+pass/fail — the real gates are quality score, key-fit, and corner cosine.
+
+### Pro workflow (copy/paste)
+
+```bash
+# 0) always the linux uv venv
+PY=.venv-linux/bin/python
+
+# 1) full gated generation into the top-ranked empty corner, auditioned as 8-bit:
+$PY CODE/50_generate.py --rank 1 --keep 3 --enhance chiptune --gate-min-cos 0.7 --group gated_test
+#   -> recombines, keeps 3 closest, 8-bit-arranges + theory-gates them,
+#      renders WAV (fluidsynth), loads survivors into webplayer group "gated_test".
+
+# 2) arpeggiated 8-bit variant of a specific corner:
+$PY CODE/50_generate.py --corner-caption "138bpm constant · triplet-feel · ..." --enhance arp
+
+# 3) gate / re-skin ONE hand-picked .mid (no generation), score it vs a corner:
+$PY CODE/50_theory_gate.py --input path/to/cand.mid --mode chiptune \
+    --target_corner "138bpm constant · triplet-feel · ..." -v
+
+# 4) analyse only — detected key + grade + quality, write nothing:
+$PY CODE/50_theory_gate.py --input path/to/cand.mid --dry-run
+```
+
+Outputs land in `_work/generated/<corner-slug>/`: `candidates.csv` (all recombinations,
+cos-to-corner), `candidates_gated.csv` (enhanced + key + grade + quality + pass flag),
+and `enhanced_*.mid` / `.wav` for the survivors. Audition is the real test — open the
+webplayer and listen.
