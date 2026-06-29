@@ -84,3 +84,10 @@ starmap_targets.png
 
 # --- Nested SEPARATE project (its own git repo); do not vendor it here ---
 music_rules/
+
+# --- Stray top-level data/asset dirs (huge; never push to GitHub) ---
+GMT/
+8-bit_ALBUMS/
+MIDI_VIDEO_GAME/
+MIDIS_TO_BE_INJESTED/
+_dailygrok_archive/
