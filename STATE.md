@@ -52,26 +52,49 @@ Nothing is mid-run. As of the latest sessions:
 >
 > **Ingest new MIDIs + tokenize corpus + fine-tune transformer.** Switch to Linux machine and run:
 >
-> **Step 1 — Ingest new files (Path A prerequisite too)**
+> **DO NOT train a big model from scratch. Use a pre-trained one and LoRA fine-tune on a small curated set.**
+>
+> **Step 1 — Ingest new files (prerequisite for everything)**
 > ```bash
 > .venv-linux/bin/python CODE/10_scan.py --apply --source MIDIS_TO_BE_INJESTED/   # 22 files smoke test
 > .venv-linux/bin/python CODE/10_scan.py --apply --source MIDI_VIDEO_GAME/         # ~19,741 VGM files
 > ```
 > Then re-run pipeline steps 11→17, 22, 24, 25, 29, 31, 35, 26 to update catalog + N×88 signatures + kNN.
-> VGM music is a structurally distinct cluster — expect new empty-space corners after rebuild.
 >
-> **Step 2 — Tokenize full corpus (Path B)**
-> Use the existing `MIDI_VIDEO_GAME/_dataset/miditok_remi_bpe.json` tokenizer (REMI+BPE vocab=20001)
-> to tokenize all ~460K MIDIs in `MIDIs/`. Write to `_work/tokens_corpus.parquet`. ~2-3 hrs.
-> See `MIDI_VIDEO_GAME/_dataset/SCHEMA.md` pass-4 section for tokenizer config reference.
+> **Step 2 — Download Giant Music Transformer (GMT)**
+> ```bash
+> pip install giantmusictransformer   # or clone https://github.com/asigalov61/Giant-Music-Transformer
+> # Download model weights from huggingface.co/asigalov61/Giant-Music-Transformer
+> ```
+> GMT is 786M params, 8192-token context, already trained on LAMD (same dataset as this corpus).
+> **Do not retrain it.** It already knows what music sounds like. This is the backbone.
+> Has Text-to-Music mode (title-based), continuation, inpainting, composer modes.
 >
-> **Step 3 — Fine-tune transformer**
-> Starting checkpoint: `MIDI_VIDEO_GAME/_dataset/model/ckpt.pt` (nanoGPT, vocab=20001, block=512,
-> train 1.05 / val 2.08 after 31,300 iters on 19K VGM songs / 93M tokens).
-> Fine-tune on combined VGM tokens + corpus tokens → closes the train/val gap, generalizes the model.
-> Optional later: further fine-tune on taste-liked subset (NinjaStar-8 high-rated songs).
+> **Step 3 — Curate a small style dataset (20–100 MIDIs)**
+> Use the 88-D corpus + catalog SQL to find songs matching the target style — do NOT hand-pick manually.
+> Example query for "sad fingerpicked acoustic 3/4":
+> ```sql
+> SELECT md5, felt_bpm, key_v2, ts_final FROM catalog
+> WHERE ts_final='3/4' AND key_v2 LIKE '%minor%'
+>   AND felt_bpm BETWEEN 60 AND 100
+>   AND quality_flag='ok' AND has_drums=0
+> ORDER BY perc_diversity ASC LIMIT 50;
+> ```
+> Copy those MIDIs out as the LoRA training set. Consistency of style matters more than quantity.
 >
-> **Prior next actions (still valid, lower priority than Path B):**
+> **Step 4 — LoRA fine-tune GMT on the small set**
+> LoRA trains only a small adapter (~1-5% of model params) — fast, cheap, no big GPU needed.
+> The adapter teaches GMT your specific style without overwriting its general music knowledge.
+> GMT's repo has fine-tuning notebooks/scripts. ~30 min to a few hours on a single GPU.
+> Output: `lora_adapter.pt` (small file, a few MB).
+>
+> **Step 5 — Generate**
+> Load GMT + LoRA adapter → generate with a title prompt or seed MIDI.
+> Example: title "Sad Waltz Acoustic Guitar" → GMT+LoRA → MIDI → render with FluidSynth.
+> Later: seed generation from empty-space corner coordinates (use `49_sig_one.py` to find the
+> nearest corpus MIDI to a target corner → use that as seed for GMT continuation).
+>
+> **Prior next actions (still valid, lower priority):**
 > Rate active pool on phone → re-run `47_propagator` → `48_active_pool` (groove r≈0.36 bottleneck).
 > Re-embed UMAP on N×88 (map is still N×74-era). Fold `taste_pred_v2` into `catalog.sqlite` as `v_good_empty`.
 > **Data finding:** odd-meter groove (gypsy 11/8–11/16) is genuine empty space. Max Roach "minor trouble",
@@ -254,7 +277,7 @@ None block current use; all are candidates for the next approved pass.
 
 ## SESSION LOG (append-only, newest first — one line each; full prose in git history pre-2026-06-25)
 
-- **2026-06-29** — Windows session (Copilot): Git hygiene — consolidated all branches (grok/4-pillars, drum-signature-v1, groove-taste-loop) into main and pushed; workflow going forward = pull at start / push at end on main only. Discovered `MIDI_VIDEO_GAME/` (~19,741 MIDIs) and `MIDIS_TO_BE_INJESTED/` (22 MIDIs) uningested. Fixed 10 Windows-broken folder names with trailing periods (F.O.F.T., W.A.R., etc.) via .NET Directory.Move + \\?\ prefix. Inspected `MIDI_VIDEO_GAME/_dataset/`: fully pre-processed VGM pipeline (features, 32-D embeddings, REMI+BPE tokenizer vocab=20k, tokens.parquet 93M tokens, nanoGPT ckpt.pt train=1.05/val=2.08 after 31,300 iters). **Path B handoff to Linux:** ingest both dirs (10_scan → pipeline → 26_signature_extend), then tokenize full corpus with existing miditok tokenizer, fine-tune ckpt.pt on combined data. See NEXT ACTION above.
+- **2026-06-29** — Windows session (Copilot): Git hygiene — consolidated all branches (grok/4-pillars, drum-signature-v1, groove-taste-loop) into main and pushed; workflow going forward = pull at start / push at end on main only. Discovered `MIDI_VIDEO_GAME/` (~19,741 MIDIs) and `MIDIS_TO_BE_INJESTED/` (22 MIDIs) uningested. Fixed 10 Windows-broken folder names with trailing periods (F.O.F.T., W.A.R., etc.) via .NET Directory.Move + \\?\ prefix. Inspected `MIDI_VIDEO_GAME/_dataset/`: fully pre-processed VGM pipeline (features, 32-D embeddings, REMI+BPE tokenizer vocab=20k, nanoGPT ckpt.pt). **Strategy updated:** do NOT train a big model — download Giant Music Transformer (786M, already trained on LAMD) + LoRA fine-tune on 20-100 curated corpus MIDIs for target style. Model is a commodity; the 88-D coordinate map + taste labels is the moat. See NEXT ACTION for full 5-step plan.
 
 - **2026-06-28** — Windows session (Copilot): inspected `oxygenMIDIREAL82bpm_...mid` (Logic Type-1, 82 BPM, G#m, 7 tracks all ch=0, no prog changes). Fixed channel assignments (drums→ch9, bass→ch1-3 prog38 Synth Bass 1, key sig G#m) → `MIDIS_TO_BE_INJESTED/oxygenMIDIREAL82bpm_Gsharpm_fixed.mid`. User confirmed `oxygenMIDIREAL82bpm_DRUM&BASS_FINAL.mid` (Type-1, ch9 drums, prog80 8-bit square bass, 82 BPM, 384 tpb) is the correct final version — do not modify. Generated PCA 2D corpus plot → `_stats/corpus_pca2d.png` (PC1=20.8%, PC2=8.5%; main blob + separate right lobe visible). Catalog search: 357 songs matching G#m/Abm 75-90 BPM 4/4 has-drums; top 20 (78-86 BPM + has bass) copied to `similar_oxygen/`. Generation (50_generate/51_remix) deferred to Linux — TMIDIX PyPI v26.x has Windows circular-import bug; local TMIDIX.py is at `B:\Music_Audio\MIDI\Advanced-MIDI-Renderer\TMIDIX.py`. LAMD_CODE path in `_common.py` hardcoded to Linux (`/home/t/datasets/LAMD/CODE`).
 - **2026-06-28** — Phase 8 loop batch: 6 fresh v3 corners (e.g. 8f5b21f2, b2d46425, ab458f6f, 559c65e8, 4bc8ec10, 4b506bdd) generated 12 tracks (2 each, jazz-fusion indep voices style, --novelty med, genre drums). Auto-added to local webplayer :8765 group grok4p_loop (now ~913 tracks). More batches queued. See grok_progress/phase8*. BG continues for hours.
