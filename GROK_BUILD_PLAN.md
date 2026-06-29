@@ -181,12 +181,17 @@ the human promotes v3); report CV r per axis. Note which pillars now carry signa
 8.2 Generate **short candidates** with `CODE/50_generate.py` / `51_remix.py` aimed at those corners. Bias toward
 the 4 pillars: real chord progressions, independent voices, strong melody. **Genre-default drums only — do NOT
 force the TBB beat** (per standing user preference).
-8.3 Render audio. Stage them via the **webplayer** (`webplayer add … ; webplayer open`) in REVERSE order so #1 is
-newest. Produce 8–16 candidates per batch.
-8.4 **Do not self-score as "done"** — the human's ears are the fitness function. Stage the batch to the **local
-webplayer**, log candidate md5s + corner provenance to `_work/grok_progress/phase8_batch_<date>.md`, then
-**keep going**: generate the next corner's batch. Don't wait — accumulate batches for the human to rate whenever
-they return.
+8.3 Render audio. Stage them with **`webplayer add` ONLY**, in REVERSE order so #1 is newest. Produce 8–16
+candidates per batch. **NEVER call `webplayer open` (or xdg-open / a browser) — it spawns a new browser tab every
+time and floods the screen. The human opens the player once themselves.** Adding tracks is enough; a page reload
+shows them.
+8.4 **Do not self-score as "done"** — the human's ears are the fitness function. `webplayer add` the batch (NO
+`open`), log candidate md5s + corner provenance to `_work/grok_progress/phase8_batch_<date>.md`, then **keep going**:
+generate the next corner's batch. Don't wait — accumulate batches for the human to rate whenever they return.
+
+> **DO PHASES IN ORDER.** Do NOT jump straight to Phase 8. Phase 8 depends on Phases 1–6 (it needs
+> `corners_v3.parquet`). If you reach a looping/generation phase, **rate-limit and never open UI windows** — a
+> persistent loop must not spawn browser tabs, dialogs, or any GUI. Generate, add to webplayer, log, repeat.
 
 ---
 
