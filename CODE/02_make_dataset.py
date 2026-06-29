@@ -24,6 +24,10 @@ def classify_source(path: str, host: str) -> str:
     p = path.lower()
     if host == "imac":
         return "imac_personal"
+    if "midi_video_game" in p:
+        return "vgm"
+    if "midis_to_be_injested" in p:
+        return "inject"
     if "lakh" in p or "/lmd" in p or "lmd_full" in p:
         return "lakh"
     if "/datasets/lamd/midis" in p or "/lamd/midis" in p:
