@@ -68,13 +68,16 @@ log "New task: ${TASK_ID}"
 
 # ── 3. Execute via opencode ───────────────────────────────────────────────
 log "Running opencode ..."
+# NOTE: --file is a greedy array flag. The positional message MUST come first and
+# --file MUST be last, or the parser slurps the prompt string in as a filename.
+PROMPT="Implement ONLY the most recent dated task in grokdaily.md (the topmost '## YYYY-MM-DD' section). Follow its embedded instructions exactly. Reuse existing CODE/ patterns. Do NOT touch STATE.md or the ninjastar lane. When finished, append a one-line 'Done' note under that task section."
 "${OPENCODE}" run \
+    "${PROMPT}" \
     --dangerously-skip-permissions \
     --model "${MODEL}" \
     --dir "${REPO_DIR}" \
     --title "dailygrok-${TIMESTAMP}" \
     --file "${TASK_FILE}" \
-    "Implement ONLY the most recent dated task in grokdaily.md (the topmost '## YYYY-MM-DD' section). Follow its embedded instructions exactly. Reuse existing CODE/ patterns. Do NOT touch STATE.md or the ninjastar lane. When finished, append a one-line 'Done' note under that task section." \
     2>&1 | sed 's/^/  [opencode] /' >> "${LOG}"
 OC_EXIT="${PIPESTATUS[0]}"
 log "opencode exit code: ${OC_EXIT}"
