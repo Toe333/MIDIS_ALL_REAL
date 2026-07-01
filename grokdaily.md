@@ -65,7 +65,18 @@ After done: Update this grokdaily.md with a one-line "Done" note + any key outpu
 Be precise, minimal, working first. Think like the project author — rhythm-first, reusable, no bloat.
 ```
 
-**Status:** Ready for agent execution. One focused task to burn tokens productively while advancing the core "invent new music in empty spaces" goal.
+**Status:** ✅ Done 2026-06-30.
+
+**Key outputs:**
+- `CODE/52_daily_probe.py` — 570 lines, tested on blend corner #2
+- `_work/daily_probes/2026-07-01_corner0002/` — 2 probe MIDIs + WAVs (18s, 28s), JSON metadata, shortlist TSV
+- `git commit e28e5d2 — grok-daily 2026-06-29`
+
+**How to run tomorrow:**
+```bash
+.venv-linux/bin/python CODE/52_daily_probe.py --render
+```
+Picks the highest-ranked undonated corner, generates 2 probes, renders WAVs.
 
 ---
 

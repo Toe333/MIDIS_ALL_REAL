@@ -21,6 +21,27 @@ This is the primary project instruction file for Grok. It loads alongside (and t
 - Use `CODE/49_sig_one.py` to embed any external/new MIDI into the live space.
 - Prefer corrected columns in catalog: `bpm_v2`/`felt_bpm`, `ts_final`, `key_v2`+`key_corr`.
 - TBB (PT notation "5-5-6 gallop clave") is the **locked core groove** for the invented style. See `DRUM_PATTERNS/TONYBOLLAS_patterns.md`.
+- Dependency map: `CODE/_pipeline_graph.py` → `PIPELINE_GRAPH.md` (regenerate after adding a step).
+
+## Invention loop (the north-star generator)
+
+The flagship coordinate-seeking generator. See `INVENTION_LOOP_PLAN.md` and the
+`invention-loop` skill. `CODE/52_invention_loop.py` runs an unattended loop: empty 88-D
+corner → nearest real corpus seed → **base GMT continuation** → embed (`49_sig_one`) →
+taste-rank (`47_propagator`) → coherence gate (`50_theory_gate`) → `invention_score` →
+resumable `_work/invention_runs/<tag>/results.tsv` → shortlist WAVs to audition.
+
+- **Base GMT only — never fine-tune** (2026-06-29 verdict: held-out loss flat/worse).
+- **Seed-and-continue only**; free-improv lands below random for coordinate-seeking.
+- Score the **full** seeded song **relative to the seed's own GMT round-trip** (`corner_gain`).
+- GPU must be reachable (`torch.cuda.is_available()`); if a sandbox hides `/dev/nvidia*`, run outside it.
+- Gate the corpus first: `CODE/53_validate_corpus.py` (read-only Medallion quality gate).
+
+```bash
+.venv-linux/bin/python CODE/53_validate_corpus.py
+.venv-linux/bin/python CODE/52_invention_loop.py --once --render --tag inv-smoke
+.venv-linux/bin/python CODE/52_invention_loop.py --tag inv-$(date +%Y%m%d) --n-corners 3 --budget 4 --render
+```
 
 ## Workflow rules
 
